@@ -4,7 +4,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>GlassRec — Screen Recorder (PWA)</title>
+  <title>webRec by Talha — Screen Recorder (PWA)</title>
   <link rel="manifest" href="/manifest.webmanifest">
   <meta name="theme-color" content="#0f1724">
   <style>
@@ -50,7 +50,7 @@ video{width:100%;height:100%;object-fit:cover}
 <body>
   <div class="app">
     <aside class="sidebar card">
-      <div class="brand">GlassRec</div>
+      <div class="brand">webRec by Talha</div>
       <div class="muted-text">Local screen recorder • PWA • Offline</div>
       <hr style="opacity:0.06;margin:12px 0"/>
       <div style="font-weight:600;margin-bottom:8px">Library</div>
@@ -257,12 +257,12 @@ stopBtn.onclick = ()=>{
 downloadBtn.onclick = ()=>{
   if(!currentBlob){ alert('No recording to download'); return; }
   const a = document.createElement('a'); a.href = URL.createObjectURL(currentBlob);
-  const name = 'glassrec_'+new Date().toISOString().replace(/[:.]/g,'-')+'.webm';
+  const name = 'webRec by Talha_'+new Date().toISOString().replace(/[:.]/g,'-')+'.webm';
   a.download = name; document.body.appendChild(a); a.click(); a.remove();
 };
 
 // ===== Simple IndexedDB Storage for library =====
-const DB_NAME='glassrec-db', STORE='recs';
+const DB_NAME='webRec by Talha-db', STORE='recs';
 function openDB(){
   return new Promise((res,rej)=>{
     const rq = indexedDB.open(DB_NAME,1);
@@ -351,8 +351,8 @@ document.addEventListener('keydown', e=>{
 
 </script><!-- FILE: manifest.webmanifest (put beside index.html) --><!--
 {
-  "name": "GlassRec",
-  "short_name": "GlassRec",
+  "name": "webRec by Talha",
+  "short_name": "webRec",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#071020",
@@ -363,7 +363,7 @@ document.addEventListener('keydown', e=>{
   ]
 }
 --><!-- FILE: sw.js (simple static cache service worker) --><!--
-const CACHE_NAME = 'glassrec-cache-v1';
+const CACHE_NAME = 'webRec by Talha-cache-v1';
 const ASSETS = [ '/', '/index.html', '/manifest.webmanifest', '/icons/icon-192.png', '/icons/icon-512.png' ];
 self.addEventListener('install', e=>{ e.waitUntil(caches.open(CACHE_NAME).then(c=>c.addAll(ASSETS))); self.skipWaiting(); });
 self.addEventListener('activate', e=>{ e.waitUntil(clients.claim()); });
