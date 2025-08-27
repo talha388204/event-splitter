@@ -1,936 +1,882 @@
-// Event Splitter — pure JS (no framework)
-// Storage key
-const LS_EVENTS_KEY = "eventSplitter_events";
-const LS_THEME_KEY = "eventSplitter_theme";
-const LS_SETTLED_KEY = "eventSplitter_settled"; // map of {eventId: {"from->to": true}}
+// Event Splitter — app.js (deploy-ready)
 
-const $app = document.getElementById("app");
+// ---- Storage & State -------------------------------------------------------
+const STORAGE_KEY = "event_splitter_v1";
 
-// Firebase (Auth ready; data stays local in V1)
-import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-app.js";
-import {
-  getAuth,
-  GoogleAuthProvider,
-  signInWithPopup,
-  signOut,
-  onAuthStateChanged,
-} from "https://www.gstatic.com/firebasejs/10.12.5/firebase-auth.js";
-
-// Your config (provided)
-const firebaseConfig = {
-  apiKey: "AIzaSyBnVNIMeJxm_fXcpfBGg-BbdIe5WL8drXg",
-  authDomain: "new-app-9fbd8.firebaseapp.com",
-  projectId: "new-app-9fbd8",
-  storageBucket: "new-app-9fbd8.firebasestorage.app",
-  messagingSenderId: "784160013930",
-  appId: "1:784160013930:web:2a44217c7e4c435a951413",
-};
-const fbApp = initializeApp(firebaseConfig);
-const auth = getAuth(fbApp);
-const provider = new GoogleAuthProvider();
-
-// State
-let state = {
-  view: "dashboard", // 'dashboard' | 'event'
-  events: readLS(LS_EVENTS_KEY, []),
-  currentEventId: null,
-  user: null,
-  settled: readLS(LS_SETTLED_KEY, {}), // { [eventId]: { "from->to": true } }
+const State = {
+  data: load(),
+  ui: {
+    currentView: "home", // 'home' | 'event' | 'settings'
+    currentEventId: null,
+  },
 };
 
-// Init theme
-const initialTheme = readLS(LS_THEME_KEY, "dark");
-if (initialTheme === "light") document.documentElement.classList.remove("dark");
-
-// Auth state
-onAuthStateChanged(auth, (u) => {
-  state.user = u ? { uid: u.uid, name: u.displayName, photo: u.photoURL } : null;
-  render();
-});
-
-// Utils
-function writeLS(key, value) {
-  localStorage.setItem(key, JSON.stringify(value));
-}
-function readLS(key, fallback) {
+function load() {
   try {
-    const raw = localStorage.getItem(key);
-    return raw ? JSON.parse(raw) : fallback;
-  } catch {
-    return fallback;
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (raw) return JSON.parse(raw);
+  } catch {}
+  return {
+    events: [],
+    settings: { theme: "dark", locale: "en" },
+  };
+}
+
+function save() {
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(State.data));
+}
+
+// ---- Utilities -------------------------------------------------------------
+const $ = (sel, root = document) => root.querySelector(sel);
+const $$ = (sel, root = document) => Array.from(root.querySelectorAll(sel));
+const fmtAmt = (v, cur) => `${cur} ${Number(v || 0).toFixed(2)}`;
+const uid = () => Math.random().toString(36).slice(2, 10);
+
+function initials(name) {
+  return name?.trim()?.split(/\s+/).map(s => s[0]).slice(0,2).join("").toUpperCase() || "?";
+}
+
+function toast(msg) {
+  const t = $("#toast");
+  if (!t) return alert(msg);
+  t.textContent = msg;
+  t.classList.add("show");
+  setTimeout(() => t.classList.remove("show"), 1800);
+}
+
+function setTheme(mode) {
+  document.documentElement.setAttribute("data-theme", mode);
+  State.data.settings.theme = mode;
+  save();
+}
+
+// ---- Routing ---------------------------------------------------------------
+function goHome() {
+  State.ui.currentView = "home";
+  State.ui.currentEventId = null;
+  render();
+}
+
+function openEvent(id) {
+  State.ui.currentView = "event";
+  State.ui.currentEventId = id;
+  render();
+}
+
+function openSettings() {
+  State.ui.currentView = "settings";
+  render();
+}
+
+// ---- Render Root -----------------------------------------------------------
+function render() {
+  const app = $("#app");
+  const view = State.ui.currentView;
+  if (view === "home") renderHome(app);
+  if (view === "event") renderEvent(app);
+  if (view === "settings") renderSettings(app);
+}
+
+// ---- Home view -------------------------------------------------------------
+function renderHome(app) {
+  const events = State.data.events;
+  app.innerHTML = "";
+
+  if (!events.length) {
+    const card = document.createElement("div");
+    card.className = "card empty";
+    card.innerHTML = `
+      <div class="emoji">🎉</div>
+      <h3>No events yet</h3>
+      <p>Create your first event to start splitting expenses with friends and family</p>
+      <div><button class="btn primary" id="createEventBtn">＋ Create new event</button></div>
+    `;
+    app.appendChild(card);
+  } else {
+    const header = document.createElement("div");
+    header.className = "card card-header";
+    header.innerHTML = `
+      <div class="card-title">Your events</div>
+      <button class="btn primary" id="createEventBtn">＋ Create new event</button>
+    `;
+    app.appendChild(header);
+
+    const wrap = document.createElement("div");
+    wrap.className = "grid grid-2";
+    events
+      .slice()
+      .sort((a,b)=> (b.createdAt||0)-(a.createdAt||0))
+      .forEach(ev => {
+        const total = ev.expenses.reduce((s, e) => s + Number(e.amount || 0), 0);
+        const card = document.createElement("div");
+        card.className = "card event-card";
+        card.innerHTML = `
+          <div class="event-emoji">${ev.emoji || "📅"}</div>
+          <div class="event-meta">
+            <div class="title">${ev.title}</div>
+            <div class="line">
+              <span>${ev.currency}</span>
+              <span>•</span>
+              <span>${ev.members.length} members</span>
+              <span>•</span>
+              <span>Total: <span class="mono">${fmtAmt(total, ev.currency)}</span></span>
+            </div>
+          </div>
+          <div class="row-actions">
+            <button class="btn">Open</button>
+          </div>
+        `;
+        card.querySelector(".btn").addEventListener("click", () => openEvent(ev.id));
+        wrap.appendChild(card);
+      });
+    app.appendChild(wrap);
+  }
+
+  // Wire create buttons
+  const c1 = $("#createEventBtn");
+  const fab = $("#globalFab");
+  if (c1) c1.onclick = () => showEventModal();
+  if (fab) {
+    fab.onclick = () => showEventModal();
+    fab.setAttribute("aria-label", "Create event");
   }
 }
-function generateId() {
-  return Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+
+// ---- Event helpers ---------------------------------------------------------
+function getCurrentEvent() {
+  return State.data.events.find(e => e.id === State.ui.currentEventId);
 }
-function randColor() {
-  const palette = ["#0ea5e9", "#22c55e", "#eab308", "#ef4444", "#8b5cf6", "#f97316", "#14b8a6"];
-  return palette[Math.floor(Math.random() * palette.length)];
-}
-function formatCurrency(amount, currency = "৳") {
-  return `${currency}${Number(amount || 0).toFixed(2)}`;
-}
-function getTotalExpenses(event) {
-  return (event.expenses || []).reduce((t, e) => t + Number(e.amount || 0), 0);
-}
-function getMemberExpenses(event, memberId) {
-  return (event.expenses || [])
-    .filter((e) => e.paidBy === memberId)
-    .reduce((t, e) => t + Number(e.amount || 0), 0);
-}
-function calculateBalances(event) {
-  const balances = {};
-  event.members.forEach((m) => {
-    balances[m.id] = { memberId: m.id, paid: 0, share: 0, balance: 0 };
-  });
-  (event.expenses || []).forEach((ex) => {
-    if (!balances[ex.paidBy]) return;
-    balances[ex.paidBy].paid += Number(ex.amount || 0);
-    const share = Number(ex.amount || 0) / (ex.sharedBy?.length || 1);
-    (ex.sharedBy || []).forEach((id) => {
-      if (!balances[id]) return;
-      balances[id].share += share;
-    });
-  });
-  Object.values(balances).forEach((b) => (b.balance = b.paid - b.share));
-  return Object.values(balances);
-}
-function calculateSettlements(balances) {
-  const settlements = [];
-  const creditors = balances.filter((b) => b.balance > 0.01).map((b) => ({ ...b }));
-  const debtors = balances.filter((b) => b.balance < -0.01).map((b) => ({ ...b, balance: Math.abs(b.balance) }));
-  creditors.sort((a, b) => b.balance - a.balance);
-  debtors.sort((a, b) => b.balance - a.balance);
-  let i = 0,
-    j = 0;
-  while (i < creditors.length && j < debtors.length) {
-    const c = creditors[i];
-    const d = debtors[j];
-    const amt = Math.min(c.balance, d.balance);
-    if (amt > 0.01) {
-      settlements.push({
-        from: d.memberId,
-        to: c.memberId,
-        amount: Math.round(amt * 100) / 100,
-      });
+
+// ---- Event view ------------------------------------------------------------
+function renderEvent(app) {
+  const ev = getCurrentEvent();
+  if (!ev) return goHome();
+  app.innerHTML = "";
+
+  // Mobile tabs
+  const tabs = document.createElement("div");
+  tabs.className = "tabs";
+  tabs.innerHTML = `
+    <div class="tab active" data-tab="members">Members</div>
+    <div class="tab" data-tab="expenses">Expenses</div>
+    <div class="tab" data-tab="summary">Summary</div>
+  `;
+  app.appendChild(tabs);
+
+  // Header
+  const head = document.createElement("div");
+  head.className = "card card-header";
+  head.innerHTML = `
+    <div class="card-title">
+      <button class="btn ghost" id="backBtn">← Back</button>
+      <span style="margin-left:8px">${ev.emoji || "📅"} <strong>${ev.title}</strong> <span class="subtle">• ${ev.currency}</span></span>
+    </div>
+    <div class="row-actions">
+      <button class="btn" id="exportBtn">Export JSON</button>
+      <button class="btn danger" id="resetBtn">Reset event</button>
+    </div>
+  `;
+  app.appendChild(head);
+
+  // Panels container
+  const panels = document.createElement("div");
+  panels.className = "panels";
+
+  // Members panel
+  const p1 = document.createElement("div");
+  p1.className = "card";
+  p1.innerHTML = `
+    <div class="panel-header">
+      <div class="panel-title">👥 Members (${ev.members.length})</div>
+      <div class="row-actions">
+        <button class="btn" id="addMemberBtn">＋ Add member</button>
+      </div>
+    </div>
+    <div class="panel-body">
+      <div class="list" id="memberList"></div>
+    </div>
+  `;
+
+  // Expenses panel
+  const p2 = document.createElement("div");
+  p2.className = "card";
+  p2.innerHTML = `
+    <div class="panel-header">
+      <div class="panel-title">💸 Expenses (${ev.expenses.length})</div>
+      <div class="row-actions">
+        <button class="btn primary" id="addExpenseBtn">＋ Add expense</button>
+      </div>
+    </div>
+    <div class="panel-body">
+      <div class="list" id="expenseList"></div>
+    </div>
+  `;
+
+  // Summary panel
+  const p3 = document.createElement("div");
+  p3.className = "card";
+  p3.innerHTML = `
+    <div class="panel-header">
+      <div class="panel-title">📊 Summary & Settlement</div>
+    </div>
+    <div class="panel-body" id="summaryPanel"></div>
+  `;
+
+  panels.appendChild(p1); panels.appendChild(p2); panels.appendChild(p3);
+  app.appendChild(panels);
+
+  // FAB repurposed to add expense inside event
+  const fab = $("#globalFab");
+  if (fab) {
+    fab.onclick = () => showExpenseModal(ev.id);
+    fab.setAttribute("aria-label", "Add expense");
+  }
+
+  // Bind header actions
+  $("#backBtn").onclick = goHome;
+  $("#exportBtn").onclick = () => exportEvent(ev);
+  $("#resetBtn").onclick = () => {
+    if (confirm("Reset this event? This removes all members and expenses.")) {
+      ev.members = [];
+      ev.expenses = [];
+      save(); render();
     }
-    c.balance -= amt;
-    d.balance -= amt;
-    if (c.balance < 0.01) i++;
-    if (d.balance < 0.01) j++;
+  };
+
+  // Populate members
+  const memberList = $("#memberList");
+  if (!ev.members.length) {
+    const empty = document.createElement("div");
+    empty.className = "empty";
+    empty.innerHTML = `
+      <div class="emoji">🫂</div>
+      <h3>No members yet</h3>
+      <p>Add members to start tracking expenses</p>
+      <div><button class="btn" id="addFirstMemberBtn">＋ Add first member</button></div>
+    `;
+    memberList.appendChild(empty);
+    empty.querySelector("#addFirstMemberBtn").onclick = () => showMemberModal(ev.id);
+  } else {
+    ev.members.forEach(m => {
+      const row = document.createElement("div");
+      row.className = "row";
+      row.innerHTML = `
+        <div class="left">
+          <div class="avatar" style="background:${m.color || '#9cf0f2'}">${initials(m.name)}</div>
+          <div>
+            <div><strong contenteditable="true" data-inline="memberName" data-id="${m.id}">${m.name}</strong></div>
+            <div class="subtle">${m.role === "admin" ? '<span class="badge admin">Admin</span>' : '<span class="badge">Member</span>'}</div>
+          </div>
+        </div>
+        <div class="row-actions">
+          <button class="btn" data-edit="${m.id}">Edit</button>
+          <button class="btn danger" data-remove="${m.id}">Remove</button>
+        </div>
+      `;
+      memberList.appendChild(row);
+
+      row.querySelector('[data-inline="memberName"]').addEventListener("blur", (e) => {
+        m.name = e.target.textContent.trim() || m.name;
+        save(); render(); // refresh initials
+      });
+      row.querySelector(`[data-edit="${m.id}"]`).onclick = () => showMemberModal(ev.id, m.id);
+      row.querySelector(`[data-remove="${m.id}"]`).onclick = () => removeMember(ev, m.id);
+    });
+  }
+
+  // Populate expenses
+  const expenseList = $("#expenseList");
+  if (!ev.expenses.length) {
+    const empty = document.createElement("div");
+    empty.className = "empty";
+    empty.innerHTML = `
+      <div class="emoji">🧾</div>
+      <h3>No expenses yet</h3>
+      <p>Add members first, then add expenses</p>
+      <div><button class="btn primary" id="addFirstExpenseBtn">＋ Add expense</button></div>
+    `;
+    expenseList.appendChild(empty);
+    empty.querySelector("#addFirstExpenseBtn").onclick = () => showExpenseModal(ev.id);
+  } else {
+    ev.expenses.slice().reverse().forEach(exp => {
+      const payer = ev.members.find(m => m.id === exp.paidBy)?.name || "Unknown";
+      const sharedNames = exp.sharedBy.map(id => ev.members.find(m => m.id === id)?.name || "?").join(", ");
+      const row = document.createElement("div");
+      row.className = "row";
+      row.innerHTML = `
+        <div class="left">
+          <div class="chip">${exp.category}</div>
+          <div>
+            <div><strong contenteditable="true" data-inline="expenseTitle" data-id="${exp.id}">${exp.title}</strong></div>
+            <div class="subtle">${exp.date} • Paid by ${payer} • Shared by ${sharedNames}</div>
+          </div>
+        </div>
+        <div class="row-actions">
+          <div class="mono" style="margin-right:8px">${fmtAmt(exp.amount, ev.currency)}</div>
+          <button class="btn" data-edit-exp="${exp.id}">Edit</button>
+          <button class="btn danger" data-del-exp="${exp.id}">Delete</button>
+        </div>
+      `;
+      expenseList.appendChild(row);
+
+      row.querySelector('[data-inline="expenseTitle"]').addEventListener("blur", (e) => {
+        exp.title = e.target.textContent.trim() || exp.title;
+        save();
+      });
+      row.querySelector(`[data-edit-exp="${exp.id}"]`).onclick = () => showExpenseModal(ev.id, exp.id);
+      row.querySelector(`[data-del-exp="${exp.id}"]`).onclick = () => {
+        if (confirm("Delete this expense?")) {
+          ev.expenses = ev.expenses.filter(x => x.id !== exp.id);
+          save(); render();
+        }
+      };
+    });
+  }
+
+  // Summary
+  renderSummary(ev, $("#summaryPanel"));
+
+  // Tabs behavior (mobile)
+  const tabEls = $$(".tab");
+  const panelEls = [p1, p2, p3];
+  tabEls.forEach((t, i) => t.addEventListener("click", () => {
+    tabEls.forEach(el => el.classList.remove("active"));
+    t.classList.add("active");
+    if (window.matchMedia("(max-width: 1023px)").matches) {
+      panelEls.forEach((p, idx) => p.style.display = (idx === i ? "block" : "none"));
+    }
+  }));
+  if (window.matchMedia("(max-width: 1023px)").matches) {
+    p1.style.display = "block"; p2.style.display = "none"; p3.style.display = "none";
+  }
+
+  // Bind add buttons
+  $("#addMemberBtn").onclick = () => showMemberModal(ev.id);
+  $("#addExpenseBtn").onclick = () => showExpenseModal(ev.id);
+}
+
+// ---- Summary & Settlement --------------------------------------------------
+function computeSummary(ev) {
+  const memberIds = ev.members.map(m => m.id);
+  const paidMap = Object.fromEntries(memberIds.map(id => [id, 0]));
+  const shareMap = Object.fromEntries(memberIds.map(id => [id, 0]));
+
+  ev.expenses.forEach(exp => {
+    const amount = Number(exp.amount || 0);
+    if (exp.paidBy && paidMap[exp.paidBy] != null) paidMap[exp.paidBy] += amount;
+
+    const sharers = (exp.sharedBy && exp.sharedBy.length) ? exp.sharedBy : memberIds;
+    const validSharers = sharers.filter(id => shareMap[id] != null);
+    const split = validSharers.length ? amount / validSharers.length : 0;
+    validSharers.forEach(id => { shareMap[id] += split; });
+  });
+
+  const balances = memberIds.map(id => ({
+    id,
+    name: ev.members.find(m => m.id === id)?.name || "?",
+    paid: paidMap[id],
+    share: shareMap[id],
+    balance: (paidMap[id] - shareMap[id]) // + means others owe them
+  }));
+
+  return { balances, settlements: minimizeCashFlow(balances) };
+}
+
+function minimizeCashFlow(balances) {
+  const creditors = [];
+  const debtors = [];
+  balances.forEach(b => {
+    const v = Number(b.balance.toFixed(2));
+    if (v > 0.009) creditors.push({ id: b.id, name: b.name, amount: v });
+    if (v < -0.009) debtors.push({ id: b.id, name: b.name, amount: -v });
+  });
+  creditors.sort((a,b) => b.amount - a.amount);
+  debtors.sort((a,b) => b.amount - a.amount);
+
+  const settlements = [];
+  let i = 0, j = 0;
+  while (i < debtors.length && j < creditors.length) {
+    const d = debtors[i], c = creditors[j];
+    const pay = Math.min(d.amount, c.amount);
+    settlements.push({ from: d.id, fromName: d.name, to: c.id, toName: c.name, amount: Number(pay.toFixed(2)) });
+    d.amount -= pay; c.amount -= pay;
+    if (d.amount <= 0.009) i++;
+    if (c.amount <= 0.009) j++;
   }
   return settlements;
 }
 
-// Render
-function render() {
-  if (state.view === "dashboard") {
-    renderDashboard();
-  } else if (state.view === "event") {
-    renderEvent();
+function renderSummary(ev, container) {
+  container.innerHTML = "";
+  const { balances, settlements } = computeSummary(ev);
+
+  // Totals
+  const total = ev.expenses.reduce((s, e) => s + Number(e.amount || 0), 0);
+  const head = document.createElement("div");
+  head.innerHTML = `
+    <div class="row">
+      <div>Total expenses</div>
+      <div class="mono"><strong>${fmtAmt(total, ev.currency)}</strong></div>
+    </div>
+  `;
+  container.appendChild(head);
+
+  // Person-wise
+  const list = document.createElement("div");
+  list.className = "list";
+  balances.forEach(b => {
+    const row = document.createElement("div");
+    row.className = "row";
+    row.innerHTML = `
+      <div class="left">
+        <div><strong>${b.name}</strong></div>
+      </div>
+      <div class="row-actions">
+        <span class="subtle">Paid</span> <span class="mono">${fmtAmt(b.paid, ev.currency)}</span>
+        <span class="subtle" style="margin-left:8px">Share</span> <span class="mono">${fmtAmt(b.share, ev.currency)}</span>
+        <span class="subtle" style="margin-left:8px">Balance</span>
+        <span class="mono" style="color:${b.balance >= 0 ? 'var(--ok)' : 'var(--danger)'}">${fmtAmt(b.balance, ev.currency)}</span>
+      </div>
+    `;
+    list.appendChild(row);
+  });
+  container.appendChild(list);
+
+  container.appendChild(divider());
+
+  // Settlement suggestions
+  const setTitle = document.createElement("div");
+  setTitle.className = "subtle";
+  setTitle.textContent = "Suggested settlements";
+  container.appendChild(setTitle);
+
+  if (!settlements.length) {
+    const done = document.createElement("div");
+    done.className = "empty";
+    done.innerHTML = `
+      <div class="emoji">✅</div>
+      <h3>All settled</h3>
+      <p>No one owes anything.</p>
+    `;
+    container.appendChild(done);
+  } else {
+    const list2 = document.createElement("div");
+    list2.className = "list";
+    settlements.forEach(s => {
+      const row = document.createElement("div");
+      row.className = "row";
+      row.innerHTML = `
+        <div class="left">
+          <div class="chip">Pay</div>
+          <div><strong>${s.fromName}</strong> ➜ <strong>${s.toName}</strong></div>
+        </div>
+        <div class="row-actions">
+          <div class="mono" style="margin-right:8px">${fmtAmt(s.amount, ev.currency)}</div>
+          <button class="btn" data-mark="paid">Mark as paid</button>
+        </div>
+      `;
+      row.querySelector('[data-mark="paid"]').onclick = () => {
+        row.style.opacity = 0.5;
+        row.querySelector('[data-mark="paid"]').disabled = true;
+        confetti();
+      };
+      list2.appendChild(row);
+    });
+    container.appendChild(list2);
   }
 }
 
-function renderTopBar({ showBack = false } = {}) {
-  const user = state.user;
-  return `
-    <div class="sticky top-0 z-30 bg-slate-900/80 backdrop-blur-md border-b border-slate-700/50">
-      <div class="max-w-6xl mx-auto px-4 py-4">
-        <div class="flex items-center justify-between">
-          <div class="flex items-center gap-4">
-            ${
-              showBack
-                ? `<button class="btn text-slate-400 hover:text-white" data-action="go-dashboard" title="Back">
-                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" class="stroke-current"><path d="M15 18l-6-6 6-6" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
-                  </button>`
-                : ""
-            }
-            <div>
-              <h1 class="text-2xl font-extrabold bg-gradient-to-r from-teal-300 to-blue-300 bg-clip-text text-transparent">
-                Event Splitter
-              </h1>
-              <p class="text-slate-400 text-sm">Manage your group expenses</p>
-            </div>
-          </div>
-          <div class="flex items-center gap-3">
-            <button class="btn px-3 py-1.5 rounded-md bg-slate-800/60 hover:bg-slate-700 border border-slate-600 text-slate-200" data-action="toggle-theme">
-              Theme
-            </button>
-            <div class="relative">
-              <button class="btn px-3 py-1.5 rounded-md bg-slate-800/60 hover:bg-slate-700 border border-slate-600 text-slate-200" data-action="open-settings">
-                Settings
-              </button>
-            </div>
-            ${
-              user
-                ? `<button class="btn flex items-center gap-2 px-3 py-1.5 rounded-md bg-teal-600 hover:bg-teal-700 text-white" data-action="signout">
-                      <img src="${user.photo || ""}" alt="" class="w-5 h-5 rounded-full border border-teal-300/40"/>
-                      <span>${user.name?.split(" ")[0] || "User"}</span>
-                   </button>`
-                : `<button class="btn px-3 py-1.5 rounded-md bg-teal-600 hover:bg-teal-700 text-white" data-action="signin">
-                    Sign in with Google
-                   </button>`
-            }
-          </div>
-        </div>
-      </div>
-    </div>
-  `;
+function divider() {
+  const d = document.createElement("div");
+  d.className = "hr";
+  return d;
 }
 
-function renderDashboard() {
-  const events = state.events;
-  $app.innerHTML = `
-    ${renderTopBar({ showBack: false })}
-    <div class="max-w-6xl mx-auto px-4 py-8">
-      ${
-        events.length === 0
-          ? `
-      <div class="flex flex-col items-center justify-center min-h-[60vh] text-center">
-        <div class="text-6xl mb-6">🎉</div>
-        <h2 class="text-2xl font-semibold text-white mb-2">No Events Yet</h2>
-        <p class="text-slate-400 mb-8 max-w-md">
-          Create your first event to start splitting expenses with friends and family
-        </p>
-        <button class="btn px-5 py-3 rounded-md bg-gradient-to-r from-teal-600 to-blue-600 text-white shadow-lg hover:shadow-xl" data-action="open-create-event">
-          <span class="mr-2">➕</span> Create New Event
-        </button>
-      </div>
-      `
-          : `
-      <div class="flex items-center justify-between mb-8">
-        <div>
-          <h2 class="text-xl font-semibold text-white">Your Events</h2>
-          <p class="text-slate-400 text-sm">${events.length} ${events.length === 1 ? "event" : "events"} total</p>
-        </div>
-        <button class="btn px-4 py-2 rounded-md bg-gradient-to-r from-teal-600 to-blue-600 text-white shadow-lg hover:shadow-xl" data-action="open-create-event">
-          <span class="mr-2">➕</span> Create New Event
-        </button>
-      </div>
-      <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-        ${events.map(renderEventCard).join("")}
-      </div>
-      `
-      }
-    </div>
-
-    ${renderCreateEventModal()}
-    ${renderSettingsModal()}
-  `;
-  bindDashboardEvents();
+// ---- Modals core -----------------------------------------------------------
+function showBackdrop(show) {
+  const bd = $("#modalBackdrop");
+  if (!bd) return;
+  bd.hidden = !show;
+  if (show) bd.onclick = closeAllModals;
+  else bd.onclick = null;
 }
 
-function renderEventCard(event) {
-  const total = getTotalExpenses(event);
-  return `
-    <div class="card rounded-xl p-0 cursor-pointer hover:scale-[1.02]" data-action="open-event" data-id="${event.id}">
-      <div class="p-6">
-        <div class="flex items-start justify-between mb-4">
-          <div class="flex items-center gap-3">
-            <div class="text-3xl">${event.emoji}</div>
-            <div>
-              <h3 class="font-semibold text-lg text-white hover:text-teal-300 transition-colors">${event.title}</h3>
-              <div class="flex items-center gap-4 mt-1 text-slate-400 text-sm">
-                <span class="flex items-center gap-1">👥 <span>${event.members.length}</span></span>
-                <span class="flex items-center gap-1">🧾 <span>${event.expenses.length}</span></span>
-              </div>
-            </div>
-          </div>
-          <span class="px-3 py-1 rounded-full text-teal-300 bg-teal-900/40 border border-teal-700">${event.currency}</span>
-        </div>
-        <div class="space-y-2">
-          <div class="flex justify-between items-center">
-            <span class="text-slate-400 text-sm">Total Expenses</span>
-            <span class="font-semibold text-white">${formatCurrency(total, event.currency)}</span>
-          </div>
-          ${
-            event.members.length > 0
-              ? `<div class="flex justify-between items-center">
-                  <span class="text-slate-400 text-sm">Per Person</span>
-                  <span class="text-slate-300 text-sm">${formatCurrency(total / event.members.length, event.currency)}</span>
-                </div>`
-              : ""
-          }
-        </div>
-        <div class="flex -space-x-2 mt-4">
-          ${event.members
-            .slice(0, 4)
-            .map(
-              (m) => `
-            <div class="w-8 h-8 rounded-full border-2 border-slate-700 flex items-center justify-center text-xs font-medium text-white" style="background-color:${m.color}">
-              ${m.name.charAt(0).toUpperCase()}
-            </div>`
-            )
-            .join("")}
-          ${
-            event.members.length > 4
-              ? `<div class="w-8 h-8 rounded-full bg-slate-700 border-2 border-slate-600 flex items-center justify-center text-xs font-medium text-slate-300">
-                   +${event.members.length - 4}
-                 </div>`
-              : ""
-          }
-        </div>
-      </div>
-    </div>
-  `;
+function openModal(id) {
+  showBackdrop(true);
+  const el = document.getElementById(id);
+  if (el) el.hidden = false;
 }
 
-function renderCreateEventModal() {
-  const emojis = ["🎉", "🍕", "✈️", "🏠", "🍽️", "🎬", "🎵", "🏖️", "🎮", "📚"];
-  const currencies = ["৳", "$", "€", "£", "¥", "₹"];
-  return `
-    <div class="modal-overlay" id="create-event-overlay">
-      <div class="modal glass">
-        <div class="flex items-center justify-between mb-3">
-          <h3 class="text-lg font-semibold">Create New Event</h3>
-          <button data-action="close-create-event" class="text-slate-300 hover:text-white">✕</button>
-        </div>
-        <form id="create-event-form" class="space-y-4">
-          <div>
-            <label class="block text-sm text-slate-300 mb-1" for="event-title">Event Title</label>
-            <input id="event-title" class="w-full rounded-md border border-slate-600 bg-slate-800 px-3 py-2 outline-none focus:ring-2 focus:ring-teal-500" placeholder="Trip to Cox's Bazar" required />
-          </div>
-
-          <div>
-            <div class="block text-sm text-slate-300 mb-2">Choose an Emoji</div>
-            <div class="grid grid-cols-5 gap-2" id="emoji-grid">
-              ${emojis
-                .map(
-                  (e, i) => `<button type="button" class="emoji-option p-3 text-2xl rounded-lg bg-slate-800 border border-slate-600 hover:bg-slate-700 ${i===0 ? 'selected border-teal-400 bg-teal-600/40' : ''}" data-emoji="${e}">${e}</button>`
-                )
-                .join("")}
-            </div>
-            <input type="hidden" id="event-emoji" value="${emojis[0]}" />
-          </div>
-
-          <div>
-            <div class="block text-sm text-slate-300 mb-1">Currency</div>
-            <select id="event-currency" class="w-full rounded-md border border-slate-600 bg-slate-800 px-3 py-2 outline-none focus:ring-2 focus:ring-teal-500">
-              ${currencies.map((c) => `<option value="${c}" ${c==="৳"?"selected":""}>${c}</option>`).join("")}
-            </select>
-          </div>
-
-          <div class="flex gap-3 pt-2">
-            <button type="button" class="btn flex-1 rounded-md border border-slate-600 text-slate-300 hover:bg-slate-800 px-4 py-2" data-action="close-create-event">Cancel</button>
-            <button type="submit" class="btn flex-1 rounded-md bg-gradient-to-r from-teal-600 to-blue-600 hover:from-teal-700 hover:to-blue-700 text-white px-4 py-2">Create Event</button>
-          </div>
-        </form>
-      </div>
-    </div>
-  `;
+function closeModal(id) {
+  const el = document.getElementById(id);
+  if (el) el.hidden = true;
+  showBackdrop(false);
 }
 
-function renderSettingsModal() {
-  return `
-    <div class="modal-overlay" id="settings-overlay">
-      <div class="modal glass">
-        <div class="flex items-center justify-between mb-3">
-          <h3 class="text-lg font-semibold">Settings & Data</h3>
-          <button data-action="close-settings" class="text-slate-300 hover:text-white">✕</button>
-        </div>
-        <div class="space-y-3">
-          <button class="btn w-full rounded-md bg-slate-800 hover:bg-slate-700 border border-slate-600 px-4 py-2" data-action="export-json">Export JSON</button>
-          <label class="block w-full">
-            <span class="block mb-1 text-sm text-slate-300">Import JSON</span>
-            <input type="file" accept="application/json" id="import-input" class="w-full rounded-md border border-slate-600 bg-slate-800 px-3 py-2"/>
-          </label>
-          <button class="btn w-full rounded-md bg-red-600 hover:bg-red-700 text-white px-4 py-2" data-action="reset-data">Reset All Events</button>
-          <div class="pt-2 text-sm text-slate-400">
-            V2 ideas: Analytics, Image Upload, Cloud Sync (Firestore), Reminders
-          </div>
-        </div>
-      </div>
-    </div>
-  `;
+function closeAllModals() {
+  ["eventModal","memberModal","expenseModal"].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.hidden = true;
+  });
+  showBackdrop(false);
 }
 
-function bindDashboardEvents() {
-  // Open event
-  document.querySelectorAll("[data-action='open-event']").forEach((el) =>
-    el.addEventListener("click", () => {
-      state.currentEventId = el.getAttribute("data-id");
-      state.view = "event";
-      render();
-    })
-  );
+// ---- Modals: Event ---------------------------------------------------------
+const EMOJIS = ["🏖️","🎉","🧳","🎮","🎵","🍽️","🚌","🏕️","🏙️","🏟️","🏝️","🍔","🍕","🍛","🍣","🍻","☕","🛍️","🎂","🧉"];
 
-  // Create event modal
-  const openBtn = document.querySelector("[data-action='open-create-event']");
-  const overlay = document.getElementById("create-event-overlay");
-  const closeBtns = document.querySelectorAll("[data-action='close-create-event']");
-
-  openBtn && openBtn.addEventListener("click", () => overlay.classList.add("show"));
-  closeBtns.forEach((b) => b.addEventListener("click", () => overlay.classList.remove("show")));
-
-  // Emoji selection
-  const emojiGrid = document.getElementById("emoji-grid");
-  const emojiInput = document.getElementById("event-emoji");
-  if (emojiGrid && emojiInput) {
-    emojiGrid.addEventListener("click", (e) => {
-      const btn = e.target.closest(".emoji-option");
-      if (!btn) return;
-      emojiGrid.querySelectorAll(".emoji-option").forEach((x) => x.classList.remove("selected", "border-teal-400", "bg-teal-600/40"));
-      btn.classList.add("selected", "border-teal-400", "bg-teal-600/40");
-      emojiInput.value = btn.getAttribute("data-emoji");
+function showEventModal() {
+  const picker = $("#emojiPicker");
+  if (picker) {
+    picker.innerHTML = "";
+    EMOJIS.forEach((emo, idx) => {
+      const it = document.createElement("div");
+      it.className = "emoji-item" + (idx === 0 ? " active" : "");
+      it.textContent = emo;
+      it.onclick = () => {
+        $$(".emoji-item").forEach(e => e.classList.remove("active"));
+        it.classList.add("active");
+        const hidden = $('#eventForm [name="emoji"]');
+        if (hidden) hidden.value = emo;
+      };
+      picker.appendChild(it);
     });
   }
 
-  // Create event submit
-  const form = document.getElementById("create-event-form");
+  const form = $("#eventForm");
   if (form) {
-    form.addEventListener("submit", (e) => {
+    form.onsubmit = (e) => {
       e.preventDefault();
-      const title = document.getElementById("event-title").value.trim();
-      const emoji = document.getElementById("event-emoji").value;
-      const currency = document.getElementById("event-currency").value;
-      if (!title) return;
-
-      const newEvent = {
-        id: generateId(),
+      const fd = new FormData(e.target);
+      const title = (fd.get("title") || "").toString().trim();
+      if (!title) return toast("Title required");
+      const ev = {
+        id: uid(),
         title,
-        emoji,
-        currency,
+        emoji: fd.get("emoji") || "📅",
+        currency: fd.get("currency") || "BDT",
         members: [],
         expenses: [],
-        createdAt: new Date().toISOString(),
+        createdAt: Date.now(),
       };
-      state.events = [newEvent, ...state.events];
-      writeLS(LS_EVENTS_KEY, state.events);
-      overlay.classList.remove("show");
-      render();
-    });
+      State.data.events.push(ev);
+      save();
+      closeModal("eventModal");
+      toast("Event created");
+      openEvent(ev.id);
+    };
   }
 
-  // Settings modal
-  const settingsOverlay = document.getElementById("settings-overlay");
-  const openSettings = document.querySelector("[data-action='open-settings']");
-  const closeSettings = document.querySelector("[data-action='close-settings']");
-  openSettings && openSettings.addEventListener("click", () => settingsOverlay.classList.add("show"));
-  closeSettings && closeSettings.addEventListener("click", () => settingsOverlay.classList.remove("show"));
-
-  // Export
-  const exportBtn = document.querySelector("[data-action='export-json']");
-  exportBtn &&
-    exportBtn.addEventListener("click", () => {
-      const blob = new Blob([JSON.stringify({ events: state.events, settled: state.settled }, null, 2)], {
-        type: "application/json",
-      });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = "event-splitter-data.json";
-      a.click();
-      URL.revokeObjectURL(url);
-    });
-
-  // Import
-  const importInput = document.getElementById("import-input");
-  importInput &&
-    importInput.addEventListener("change", async (e) => {
-      const file = e.target.files?.[0];
-      if (!file) return;
-      const text = await file.text();
-      try {
-        const data = JSON.parse(text);
-        if (Array.isArray(data.events)) {
-          state.events = data.events;
-          writeLS(LS_EVENTS_KEY, state.events);
-        }
-        if (data.settled && typeof data.settled === "object") {
-          state.settled = data.settled;
-          writeLS(LS_SETTLED_KEY, state.settled);
-        }
-        settingsOverlay.classList.remove("show");
-        render();
-      } catch {
-        alert("Invalid JSON");
-      }
-    });
-
-  // Reset
-  const resetBtn = document.querySelector("[data-action='reset-data']");
-  resetBtn &&
-    resetBtn.addEventListener("click", () => {
-      if (!confirm("Reset all events? This cannot be undone.")) return;
-      state.events = [];
-      state.settled = {};
-      writeLS(LS_EVENTS_KEY, state.events);
-      writeLS(LS_SETTLED_KEY, state.settled);
-      render();
-    });
-
-  // Theme toggle
-  const themeBtn = document.querySelector("[data-action='toggle-theme']");
-  themeBtn &&
-    themeBtn.addEventListener("click", () => {
-      const isDark = document.documentElement.classList.toggle("dark");
-      writeLS(LS_THEME_KEY, isDark ? "dark" : "light");
-    });
-
-  // Back not present on dashboard
-  const backBtn = document.querySelector("[data-action='go-dashboard']");
-  backBtn && backBtn.addEventListener("click", () => {});
-
-  // Auth
-  const signinBtn = document.querySelector("[data-action='signin']");
-  signinBtn && signinBtn.addEventListener("click", () => signInWithPopup(auth, provider).catch(console.warn));
-  const signoutBtn = document.querySelector("[data-action='signout']");
-  signoutBtn && signoutBtn.addEventListener("click", () => signOut(auth).catch(console.warn));
+  $$('[data-close="eventModal"]').forEach(b => b.onclick = () => closeModal("eventModal"));
+  openModal("eventModal");
 }
 
-// Event details
-function renderEvent() {
-  const event = state.events.find((e) => e.id === state.currentEventId);
-  if (!event) {
-    state.view = "dashboard";
-    render();
+// ---- Modals: Member --------------------------------------------------------
+const COLORS = ["#9cf0f2","#a78bfa","#f472b6","#60a5fa","#34d399","#fbbf24","#fb7185","#f59e0b","#22d3ee","#c7d2fe"];
+
+function showMemberModal(eventId, memberId = null) {
+  const ev = State.data.events.find(e => e.id === eventId);
+  if (!ev) return;
+
+  const form = $("#memberForm");
+  const title = $("#memberModalTitle");
+  const colorPicker = $("#colorPicker");
+  if (!form || !title || !colorPicker) return;
+
+  form.reset();
+  colorPicker.innerHTML = "";
+
+  // Populate color choices
+  COLORS.forEach((c, idx) => {
+    const it = document.createElement("div");
+    it.className = "color-item" + (idx === 0 ? " active" : "");
+    it.style.background = c;
+    it.onclick = () => {
+      $$(".color-item").forEach(e => e.classList.remove("active"));
+      it.classList.add("active");
+      form.color.value = c;
+    };
+    colorPicker.appendChild(it);
+  });
+  form.color.value = COLORS[0];
+
+  if (memberId) {
+    const m = ev.members.find(x => x.id === memberId);
+    if (!m) return;
+    title.textContent = "Edit member";
+    form.memberId.value = m.id;
+    form.name.value = m.name;
+    form.role.value = m.role;
+    form.color.value = m.color || COLORS[0];
+    // highlight selected color
+    $$(".color-item").forEach(el => {
+      if (el.style.background === m.color) el.classList.add("active");
+      else el.classList.remove("active");
+    });
+  } else {
+    title.textContent = "Add new member";
+    form.memberId.value = "";
+  }
+
+  form.onsubmit = (e) => {
+    e.preventDefault();
+    const fd = new FormData(form);
+    const id = fd.get("memberId");
+    const name = (fd.get("name") || "").toString().trim();
+    if (!name) return toast("Name required");
+
+    const payload = {
+      id: id || uid(),
+      name,
+      role: fd.get("role"),
+      color: fd.get("color"),
+    };
+    if (id) {
+      const idx = ev.members.findIndex(m => m.id === id);
+      if (idx >= 0) ev.members[idx] = { ...ev.members[idx], ...payload };
+    } else {
+      ev.members.push(payload);
+    }
+    save(); closeModal("memberModal"); render();
+  };
+
+  $$('[data-close="memberModal"]').forEach(b => b.onclick = () => closeModal("memberModal"));
+  openModal("memberModal");
+}
+
+// ---- Modals: Expense -------------------------------------------------------
+function showExpenseModal(eventId, expenseId = null) {
+  const ev = State.data.events.find(e => e.id === eventId);
+  if (!ev) return;
+
+  if (!ev.members.length) {
+    toast("Add members first");
     return;
   }
-  const total = getTotalExpenses(event);
-  const balances = calculateBalances(event);
-  const settlements = calculateSettlements(balances);
 
-  $app.innerHTML = `
-    ${renderTopBar({ showBack: true })}
-    <div class="max-w-6xl mx-auto px-4 py-6">
-      <div class="flex items-start justify-between mb-6">
-        <div class="flex items-center gap-3">
-          <div class="text-4xl">${event.emoji}</div>
-          <div>
-            <h2 class="text-2xl font-bold">${event.title}</h2>
-            <div class="text-slate-400 text-sm">${event.members.length} members · ${event.expenses.length} expenses</div>
-          </div>
-        </div>
-        <div class="text-right">
-          <div class="text-slate-400 text-sm">Total</div>
-          <div class="text-xl font-semibold">${formatCurrency(total, event.currency)}</div>
-        </div>
-      </div>
+  const form = $("#expenseForm");
+  const paidBySel = form?.paidBy;
+  const sharedBox = $("#sharedByList");
+  if (!form || !paidBySel || !sharedBox) return;
 
-      <!-- Desktop 3-column / Mobile stacked -->
-      <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <!-- Members -->
-        <div class="card rounded-xl p-4">
-          <div class="flex items-center justify-between mb-3">
-            <h3 class="font-semibold">👥 Members</h3>
-            <button class="btn px-3 py-1.5 rounded-md bg-slate-800 hover:bg-slate-700 border border-slate-600" data-action="add-member">Add</button>
-          </div>
-          <div id="members-list" class="space-y-2">
-            ${event.members
-              .map(
-                (m) => `
-              <div class="flex items-center justify-between p-2 rounded-lg bg-slate-800/60 border border-slate-700/60">
-                <div class="flex items-center gap-2">
-                  <div class="w-8 h-8 rounded-full flex items-center justify-center text-xs text-white" style="background:${m.color}">${m.name.charAt(0).toUpperCase()}</div>
-                  <div>
-                    <div class="font-medium">${m.name}</div>
-                    <div class="text-xs text-slate-400">${m.role === "admin" ? "Admin" : "Member"}</div>
-                  </div>
-                </div>
-                <div class="flex items-center gap-2">
-                  <button class="text-xs px-2 py-1 rounded bg-slate-700 hover:bg-slate-600" data-action="edit-member" data-id="${m.id}">Edit</button>
-                  <button class="text-xs px-2 py-1 rounded bg-red-600 hover:bg-red-700 text-white" data-action="remove-member" data-id="${m.id}">Remove</button>
-                </div>
-              </div>`
-              )
-              .join("")}
-          </div>
-        </div>
+  form.reset();
+  sharedBox.innerHTML = "";
 
-        <!-- Expenses -->
-        <div class="card rounded-xl p-4">
-          <div class="flex items-center justify-between mb-3">
-            <h3 class="font-semibold">💸 Expenses</h3>
-            <button class="btn px-3 py-1.5 rounded-md bg-teal-600 hover:bg-teal-700 text-white" data-action="add-expense">Add</button>
-          </div>
-          <div id="expenses-list" class="space-y-2">
-            ${event.expenses
-              .slice()
-              .reverse()
-              .map(renderExpenseRow.bind(null, event))
-              .join("")}
-          </div>
-        </div>
+  // Build member checkboxes
+  ev.members.forEach(m => {
+    const label = document.createElement("label");
+    label.style.display = "flex";
+    label.style.gap = "8px";
+    label.style.alignItems = "center";
+    label.innerHTML = `<input type="checkbox" name="sharedBy" value="${m.id}" checked> ${m.name}`;
+    sharedBox.appendChild(label);
+  });
 
-        <!-- Summary / Settlement -->
-        <div class="card rounded-xl p-4">
-          <h3 class="font-semibold mb-3">⚖ Summary & Settlement</h3>
-          <div class="space-y-3">
-            <div class="rounded-lg border border-slate-700/60 bg-slate-800/60">
-              ${balances
-                .map((b) => {
-                  const m = event.members.find((x) => x.id === b.memberId);
-                  return `
-                  <div class="flex items-center justify-between p-2 border-b border-slate-700/50 last:border-0">
-                    <div class="flex items-center gap-2">
-                      <div class="w-7 h-7 rounded-full text-[10px] flex items-center justify-center text-white" style="background:${m?.color || "#334155"}">${m?.name?.charAt(0)?.toUpperCase() || "?"}</div>
-                      <div class="text-sm">
-                        <div class="font-medium">${m?.name || "Unknown"}</div>
-                        <div class="text-xs text-slate-400">Paid ${formatCurrency(b.paid, event.currency)} · Share ${formatCurrency(b.share, event.currency)}</div>
-                      </div>
-                    </div>
-                    <div class="text-sm font-semibold ${b.balance >= 0 ? "text-teal-300" : "text-rose-300"}">
-                      ${b.balance >= 0 ? "Gets" : "Owes"} ${formatCurrency(Math.abs(b.balance), event.currency)}
-                    </div>
-                  </div>`;
-                })
-                .join("")}
-            </div>
+  // PaidBy dropdown
+  paidBySel.innerHTML = "";
+  ev.members.forEach(m => {
+    const opt = document.createElement("option");
+    opt.value = m.id;
+    opt.textContent = m.name;
+    paidBySel.appendChild(opt);
+  });
 
-            <div>
-              <h4 class="font-medium mb-2">Settlements</h4>
-              <div id="settlements" class="space-y-2">
-                ${
-                  settlements.length === 0
-                    ? `<div class="text-sm text-slate-400">All settled 🎉</div>`
-                    : settlements
-                        .map((s) => {
-                          const from = event.members.find((m) => m.id === s.from)?.name || "Someone";
-                          const to = event.members.find((m) => m.id === s.to)?.name || "Someone";
-                          const key = `${s.from}->${s.to}`;
-                          const paid = !!(state.settled[event.id]?.[key]);
-                          return `
-                          <div class="flex items-center justify-between p-2 rounded-lg bg-slate-800/60 border border-slate-700/60">
-                            <div class="text-sm">
-                              <span class="mr-2">➡️</span>
-                              <b>${from}</b> will pay <b>${to}</b> ${formatCurrency(s.amount, event.currency)}
-                            </div>
-                            <label class="text-sm flex items-center gap-2">
-                              <input type="checkbox" data-action="toggle-paid" data-key="${key}" ${paid ? "checked" : ""}/>
-                              <span>Mark as Paid</span>
-                            </label>
-                          </div>`;
-                        })
-                        .join("")
-                }
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
-
-    ${renderExpenseModal(event)}
-    ${renderMemberModal()}
-  `;
-
-  bindEventScreen(event);
-}
-function bindEventScreen(event) {
-  // Back to dashboard
-  const backBtn = document.querySelector("[data-action='go-dashboard']");
-  backBtn &&
-    backBtn.addEventListener("click", () => {
-      state.view = "dashboard";
-      state.currentEventId = null;
-      render();
+  // If editing, hydrate values
+  if (expenseId) {
+    const exp = ev.expenses.find(x => x.id === expenseId);
+    if (!exp) return;
+    form.expenseId.value = exp.id;
+    form.title.value = exp.title;
+    form.amount.value = exp.amount;
+    form.date.value = exp.date;
+    form.paidBy.value = exp.paidBy;
+    form.category.value = exp.category;
+    form.note.value = exp.note || "";
+    $$('#sharedByList input[type="checkbox"]').forEach(cb => {
+      cb.checked = exp.sharedBy.includes(cb.value);
     });
-
-  // Member overlay open/close
-  const memberOverlay = document.getElementById("member-overlay");
-  const closeMemberBtns = document.querySelectorAll("[data-action='close-member']");
-  closeMemberBtns.forEach((b) => b.addEventListener("click", () => memberOverlay.classList.remove("show")));
-
-  const openAddMember = document.querySelector("[data-action='add-member']");
-  openAddMember &&
-    openAddMember.addEventListener("click", () => {
-      document.getElementById("member-modal-title").textContent = "Add Member";
-      document.getElementById("member-id").value = "";
-      document.getElementById("m-name").value = "";
-      document.getElementById("m-role").value = "member";
-      document.getElementById("m-color").value = "#14b8a6";
-      memberOverlay.classList.add("show");
-    });
-
-  // Member edit/remove
-  document.querySelectorAll("[data-action='edit-member']").forEach((btn) =>
-    btn.addEventListener("click", () => {
-      const id = btn.getAttribute("data-id");
-      const m = event.members.find((x) => x.id === id);
-      if (!m) return;
-      document.getElementById("member-modal-title").textContent = "Edit Member";
-      document.getElementById("member-id").value = m.id;
-      document.getElementById("m-name").value = m.name;
-      document.getElementById("m-role").value = m.role || "member";
-      document.getElementById("m-color").value = m.color || "#14b8a6";
-      memberOverlay.classList.add("show");
-    })
-  );
-
-  document.querySelectorAll("[data-action='remove-member']").forEach((btn) =>
-    btn.addEventListener("click", () => {
-      const id = btn.getAttribute("data-id");
-      // Safety: block if referenced in expenses
-      const used =
-        event.expenses.some((ex) => ex.paidBy === id) ||
-        event.expenses.some((ex) => (ex.sharedBy || []).includes(id));
-      if (used) {
-        alert("This member is used in expenses. Edit or remove those expenses first.");
-        return;
-      }
-      if (!confirm("Remove this member?")) return;
-      event.members = event.members.filter((m) => m.id !== id);
-      persistEvent(event);
-      render();
-    })
-  );
-
-  // Member form submit
-  const memberForm = document.getElementById("member-form");
-  memberForm &&
-    memberForm.addEventListener("submit", (e) => {
-      e.preventDefault();
-      const id = document.getElementById("member-id").value;
-      const name = document.getElementById("m-name").value.trim();
-      const role = document.getElementById("m-role").value || "member";
-      const color = document.getElementById("m-color").value || "#14b8a6";
-      if (!name) return;
-
-      if (id) {
-        const idx = event.members.findIndex((m) => m.id === id);
-        if (idx >= 0) event.members[idx] = { ...event.members[idx], name, role, color };
-      } else {
-        event.members.push({ id: generateId(), name, role, color });
-      }
-      memberOverlay.classList.remove("show");
-      persistEvent(event);
-      render();
-    });
-
-  // Expense overlay open/close
-  const expenseOverlay = document.getElementById("expense-overlay");
-  const closeExpenseBtns = document.querySelectorAll("[data-action='close-expense']");
-  closeExpenseBtns.forEach((b) => b.addEventListener("click", () => expenseOverlay.classList.remove("show")));
-
-  const openAddExpense = document.querySelector("[data-action='add-expense']");
-  openAddExpense &&
-    openAddExpense.addEventListener("click", () => {
-      if (event.members.length === 0) {
-        alert("Add at least one member first.");
-        return;
-      }
-      setupExpenseModalMembers(event);
-      document.getElementById("expense-modal-title").textContent = "Add Expense";
-      document.getElementById("expense-id").value = "";
-      document.getElementById("ex-title").value = "";
-      document.getElementById("ex-amount").value = "";
-      document.getElementById("ex-date").value = new Date().toISOString().slice(0, 10);
-      document.getElementById("ex-category").value = "";
-      document.getElementById("ex-note").value = "";
-      expenseOverlay.classList.add("show");
-    });
-
-  // Expense edit/delete
-  document.querySelectorAll("[data-action='edit-expense']").forEach((btn) =>
-    btn.addEventListener("click", () => {
-      const id = btn.getAttribute("data-id");
-      const ex = event.expenses.find((x) => x.id === id);
-      if (!ex) return;
-      setupExpenseModalMembers(event, ex);
-      document.getElementById("expense-modal-title").textContent = "Edit Expense";
-      document.getElementById("expense-id").value = ex.id;
-      document.getElementById("ex-title").value = ex.title || "";
-      document.getElementById("ex-amount").value = ex.amount || 0;
-      document.getElementById("ex-date").value = ex.date || new Date().toISOString().slice(0, 10);
-      document.getElementById("ex-category").value = ex.category || "";
-      document.getElementById("ex-note").value = ex.note || "";
-      expenseOverlay.classList.add("show");
-    })
-  );
-
-  document.querySelectorAll("[data-action='delete-expense']").forEach((btn) =>
-    btn.addEventListener("click", () => {
-      const id = btn.getAttribute("data-id");
-      if (!confirm("Delete this expense?")) return;
-      event.expenses = event.expenses.filter((x) => x.id !== id);
-      persistEvent(event);
-      render();
-    })
-  );
-
-  // Expense form submit
-  const expenseForm = document.getElementById("expense-form");
-  expenseForm &&
-    expenseForm.addEventListener("submit", (e) => {
-      e.preventDefault();
-      const eid = document.getElementById("expense-id").value;
-      const title = document.getElementById("ex-title").value.trim();
-      const amount = parseFloat(document.getElementById("ex-amount").value || "0");
-      const date = document.getElementById("ex-date").value;
-      const paidBy = document.getElementById("ex-paidBy").value;
-      const category = document.getElementById("ex-category").value.trim();
-      const note = document.getElementById("ex-note").value.trim();
-      const sharedBy = Array.from(document.querySelectorAll("input[name='ex-sharedBy']:checked")).map((i) => i.value);
-
-      if (!title || !Number.isFinite(amount) || amount <= 0 || !paidBy || sharedBy.length === 0) {
-        alert("Please fill all required fields (title, amount > 0, paidBy, at least one sharedBy).");
-        return;
-      }
-
-      const payload = { id: eid || generateId(), title, amount, date, paidBy, sharedBy, category, note };
-
-      if (eid) {
-        const idx = event.expenses.findIndex((x) => x.id === eid);
-        if (idx >= 0) event.expenses[idx] = payload;
-      } else {
-        event.expenses.push(payload);
-      }
-
-      expenseOverlay.classList.remove("show");
-      persistEvent(event);
-      render();
-    });
-
-  // Settlement toggle
-  document.querySelectorAll("input[data-action='toggle-paid']").forEach((cb) =>
-    cb.addEventListener("change", () => {
-      const key = cb.getAttribute("data-key");
-      const evId = event.id;
-      state.settled[evId] = state.settled[evId] || {};
-      state.settled[evId][key] = cb.checked;
-      writeLS(LS_SETTLED_KEY, state.settled);
-    })
-  );
-}
-
-function setupExpenseModalMembers(event, existing) {
-  // PaidBy select
-  const paidSel = document.getElementById("ex-paidBy");
-  paidSel.innerHTML = event.members.map((m, i) => `<option value="${m.id}" ${existing ? (existing.paidBy===m.id?"selected":"") : (i===0?"selected":"")}>${m.name}</option>`).join("");
-
-  // SharedBy checkboxes
-  const grid = document.getElementById("ex-sharedBy");
-  const existingSet = new Set(existing?.sharedBy || event.members.map((m) => m.id)); // default all
-  grid.innerHTML = event.members
-    .map(
-      (m) => `
-      <label class="flex items-center gap-2 p-2 rounded-md bg-slate-800/60 border border-slate-700/60">
-        <input type="checkbox" name="ex-sharedBy" value="${m.id}" ${existingSet.has(m.id) ? "checked" : ""}/>
-        <span class="text-sm">${m.name}</span>
-      </label>`
-    )
-    .join("");
-}
-
-
-// Persist helper
-function persistEvent(event) {
-  const idx = state.events.findIndex((e) => e.id === event.id);
-  if (idx >= 0) {
-    state.events[idx] = event;
-    writeLS(LS_EVENTS_KEY, state.events);
+  } else {
+    form.expenseId.value = "";
+    form.date.value = new Date().toISOString().split("T")[0];
+    // default paidBy to first member
+    if (ev.members[0]) paidBySel.value = ev.members[0].id;
   }
+
+  form.onsubmit = (e) => {
+    e.preventDefault();
+    const fd = new FormData(form);
+    const id = fd.get("expenseId");
+    const title = (fd.get("title") || "").toString().trim();
+    const amount = parseFloat((fd.get("amount") || "0").toString().replace(",", "."));
+    const date = fd.get("date");
+    const paidBy = fd.get("paidBy");
+    const sharedBy = fd.getAll("sharedBy");
+    const category = fd.get("category");
+    const note = fd.get("note") || "";
+
+    if (!title) return toast("Title required");
+    if (!(amount >= 0)) return toast("Enter valid amount");
+    if (!sharedBy.length) return toast("Select at least one person");
+
+    const payload = {
+      id: id || uid(),
+      title, amount, date, paidBy, sharedBy, category, note
+    };
+
+    if (id) {
+      const idx = ev.expenses.findIndex(x => x.id === id);
+      if (idx >= 0) ev.expenses[idx] = { ...ev.expenses[idx], ...payload };
+    } else {
+      ev.expenses.push(payload);
+    }
+    save();
+    closeModal("expenseModal");
+    render();
+  };
+
+  $$('[data-close="expenseModal"]').forEach(b => b.onclick = () => closeModal("expenseModal"));
+  openModal("expenseModal");
 }
 
+// ---- Helpers: members, export, confetti -----------------------------------
+function removeMember(ev, memberId) {
+  const member = ev.members.find(m => m.id === memberId);
+  if (!member) return;
+  if (!confirm(`Remove ${member.name}? Expenses paid by them will show as "Unknown".`)) return;
 
-function renderExpenseRow(event, ex) {
-  const payer = event.members.find((m) => m.id === ex.paidBy)?.name || "Unknown";
-  const who = (ex.sharedBy || [])
-    .map((id) => event.members.find((m) => m.id === id)?.name || "Unknown")
-    .join(", ");
-  return `
-    <div class="flex items-start justify-between p-2 rounded-lg bg-slate-800/60 border border-slate-700/60">
-      <div>
-        <div class="font-medium">${ex.title} <span class="ml-2 text-xs px-2 py-0.5 rounded-full bg-slate-700/70">${ex.category || "General"}</span></div>
-        <div class="text-xs text-slate-400 mt-0.5">${ex.date || ""}</div>
-        <div class="text-xs text-slate-400 mt-1">Paid by <b>${payer}</b> · Shared by <b>${who || "—"}</b></div>
-        ${ex.note ? `<div class="text-xs text-slate-300 mt-1">${ex.note}</div>` : ""}
+  // Remove from members
+  ev.members = ev.members.filter(m => m.id !== memberId);
+
+  // Clean expenses: remove from sharedBy; keep expense even if empty — summary defaults to all members
+  ev.expenses.forEach(exp => {
+    exp.sharedBy = (exp.sharedBy || []).filter(id => id !== memberId);
+    if (exp.paidBy === memberId) exp.paidBy = null;
+  });
+
+  save();
+  render();
+}
+
+function exportEvent(ev) {
+  const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(ev, null, 2));
+  const dl = document.createElement("a");
+  dl.href = dataStr;
+  dl.download = `${ev.title}.json`;
+  document.body.appendChild(dl);
+  dl.click();
+  dl.remove();
+}
+
+function confetti() {
+  // Minimal celebratory feedback
+  toast("🎉 Settlement marked as paid!");
+}
+
+// ---- Settings view ---------------------------------------------------------
+function renderSettings(app) {
+  app.innerHTML = "";
+  const card = document.createElement("div");
+  card.className = "card";
+  card.innerHTML = `
+    <div class="card-header">
+      <div class="card-title">Settings</div>
+    </div>
+    <div class="panel-body">
+      <div class="row">
+        <div>Theme</div>
+        <div class="row-actions">
+          <button class="btn" id="toggleThemeBtn">Toggle Dark/Light</button>
+        </div>
       </div>
-      <div class="text-right">
-        <div class="font-semibold">${formatCurrency(ex.amount, event.currency)}</div>
-        <div class="mt-2 flex items-center gap-2">
-          <button class="text-xs px-2 py-1 rounded bg-slate-700 hover:bg-slate-600" data-action="edit-expense" data-id="${ex.id}">Edit</button>
-          <button class="text-xs px-2 py-1 rounded bg-red-600 hover:bg-red-700 text-white" data-action="delete-expense" data-id="${ex.id}">Delete</button>
+      <div class="row">
+        <div>Export all data</div>
+        <div class="row-actions">
+          <button class="btn" id="exportAllBtn">Export JSON</button>
+        </div>
+      </div>
+      <div class="row">
+        <div>Import data</div>
+        <div class="row-actions">
+          <input type="file" id="importFile" accept="application/json" />
+        </div>
+      </div>
+      <div class="row">
+        <div>Reset app</div>
+        <div class="row-actions">
+          <button class="btn danger" id="resetAppBtn">Reset</button>
         </div>
       </div>
     </div>
   `;
+  app.appendChild(card);
+
+  $("#toggleThemeBtn").onclick = () => {
+    setTheme(State.data.settings.theme === "dark" ? "light" : "dark");
+  };
+
+  $("#exportAllBtn").onclick = () => {
+    const blob = new Blob([JSON.stringify(State.data, null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url; a.download = "event-splitter-backup.json";
+    document.body.appendChild(a); a.click(); a.remove();
+    URL.revokeObjectURL(url);
+  };
+
+  $("#importFile").onchange = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    try {
+      const text = await file.text();
+      const json = JSON.parse(text);
+      if (!json || typeof json !== "object") throw new Error();
+      State.data = json;
+      save();
+      toast("Imported successfully");
+      goHome();
+    } catch {
+      toast("Invalid file");
+    } finally {
+      e.target.value = "";
+    }
+  };
+
+  $("#resetAppBtn").onclick = () => {
+    if (confirm("Reset all data? This cannot be undone.")) {
+      State.data = { events: [], settings: { theme: "dark", locale: "en" } };
+      save();
+      toast("App reset");
+      goHome();
+    }
+  };
 }
 
-function renderExpenseModal(event) {
-  return `
-    <div class="modal-overlay" id="expense-overlay">
-      <div class="modal glass">
-        <div class="flex items-center justify-between mb-3">
-          <h3 class="text-lg font-semibold" id="expense-modal-title">Add Expense</h3>
-          <button data-action="close-expense" class="text-slate-300 hover:text-white">✕</button>
-        </div>
-        <form id="expense-form" class="space-y-3">
-          <input type="hidden" id="expense-id" />
-          <div>
-            <label class="block text-sm text-slate-300 mb-1">Title</label>
-            <input id="ex-title" class="w-full rounded-md border border-slate-600 bg-slate-800 px-3 py-2 outline-none focus:ring-2 focus:ring-teal-500" required/>
-          </div>
-          <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <div>
-              <label class="block text-sm text-slate-300 mb-1">Amount</label>
-              <input type="number" min="0" step="0.01" id="ex-amount" class="w-full rounded-md border border-slate-600 bg-slate-800 px-3 py-2 outline-none focus:ring-2 focus:ring-teal-500" required/>
-            </div>
-            <div>
-              <label class="block text-sm text-slate-300 mb-1">Date</label>
-              <input type="date" id="ex-date" class="w-full rounded-md border border-slate-600 bg-slate-800 px-3 py-2 outline-none focus:ring-2 focus:ring-teal-500"/>
-            </div>
-          </div>
-          <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <div>
-              <label class="block text-sm text-slate-300 mb-1">Who Paid</label>
-              <select id="ex-paidBy" class="w-full rounded-md border border-slate-600 bg-slate-800 px-3 py-2 outline-none focus:ring-2 focus:ring-teal-500"></select>
-            </div>
-            <div>
-              <label class="block text-sm text-slate-300 mb-1">Category</label>
-              <input id="ex-category" placeholder="Food / Travel / Stay" class="w-full rounded-md border border-slate-600 bg-slate-800 px-3 py-2 outline-none focus:ring-2 focus:ring-teal-500"/>
-            </div>
-          </div>
-          <div>
-            <div class="block text-sm text-slate-300 mb-1">Shared By</div>
-            <div id="ex-sharedBy" class="grid grid-cols-2 sm:grid-cols-3 gap-2"></div>
-          </div>
-          <div>
-            <label class="block text-sm text-slate-300 mb-1">Note (optional)</label>
-            <textarea id="ex-note" rows="2" class="w-full rounded-md border border-slate-600 bg-slate-800 px-3 py-2 outline-none focus:ring-2 focus:ring-teal-500"></textarea>
-          </div>
-          <div class="flex gap-3 pt-2">
-            <button type="button" class="btn flex-1 rounded-md border border-slate-600 text-slate-300 hover:bg-slate-800 px-4 py-2" data-action="close-expense">Cancel</button>
-            <button type="submit" class="btn flex-1 rounded-md bg-gradient-to-r from-teal-600 to-blue-600 hover:from-teal-700 hover:to-blue-700 text-white px-4 py-2">Save</button>
-          </div>
-        </form>
-      </div>
-    </div>
-  `;
-}
-function renderMemberModal() {
-  return `
-    <div class="modal-overlay" id="member-overlay">
-      <div class="modal glass">
-        <div class="flex items-center justify-between mb-3">
-          <h3 class="text-lg font-semibold" id="member-modal-title">Add Member</h3>
-          <button data-action="close-member" class="text-slate-300 hover:text-white">✕</button>
-        </div>
-        <form id="member-form" class="space-y-3">
-          <input type="hidden" id="member-id" />
-          <div>
-            <label class="block text-sm text-slate-300 mb-1">Name</label>
-            <input id="m-name" class="w-full rounded-md border border-slate-600 bg-slate-800 px-3 py-2 outline-none focus:ring-2 focus:ring-teal-500" required/>
-          </div>
-          <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <div>
-              <label class="block text-sm text-slate-300 mb-1">Role</label>
-              <select id="m-role" class="w-full rounded-md border border-slate-600 bg-slate-800 px-3 py-2 outline-none focus:ring-2 focus:ring-teal-500">
-                <option value="member">Member</option>
-                <option value="admin">Admin</option>
-              </select>
-            </div>
-            <div>
-              <label class="block text-sm text-slate-300 mb-1">Color</label>
-              <input type="color" id="m-color" class="w-full rounded-md border border-slate-600 bg-slate-800 px-3 py-2 outline-none focus:ring-2 focus:ring-teal-500" value="#14b8a6"/>
-            </div>
-          </div>
-          <div class="flex gap-3 pt-2">
-            <button type="button" class="btn flex-1 rounded-md border border-slate-600 text-slate-300 hover:bg-slate-800 px-4 py-2" data-action="close-member">Cancel</button>
-            <button type="submit" class="btn flex-1 rounded-md bg-gradient-to-r from-teal-600 to-blue-600 hover:from-teal-700 hover:to-blue-700 text-white px-4 py-2">Save</button>
-          </div>
-        </form>
-      </div>
-    </div>
-  `;
-}
+// ---- Global bindings -------------------------------------------------------
+document.addEventListener("DOMContentLoaded", () => {
+  // Initial theme + first render
+  setTheme(State.data.settings.theme || "dark");
+  render();
+
+  // Topbar buttons
+  const themeToggle = $("#themeToggle");
+  if (themeToggle) {
+    themeToggle.onclick = () => {
+      setTheme(State.data.settings.theme === "dark" ? "light" : "dark");
+    };
+  }
+  const settingsBtn = $("#settingsBtn");
+  if (settingsBtn) settingsBtn.onclick = () => openSettings();
+
+  // Bottom nav
+  $$('.bn-item').forEach(btn => {
+    btn.onclick = () => {
+      const nav = btn.getAttribute("data-nav");
+      if (nav === "home") goHome();
+      else if (nav === "settings") openSettings();
+    };
+  });
+
+  // Close modals with Esc
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape") closeAllModals();
+  });
+});
