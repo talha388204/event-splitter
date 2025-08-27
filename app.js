@@ -616,6 +616,212 @@ function renderEvent() {
 
   bindEventScreen(event);
 }
+function bindEventScreen(event) {
+  // Back to dashboard
+  const backBtn = document.querySelector("[data-action='go-dashboard']");
+  backBtn &&
+    backBtn.addEventListener("click", () => {
+      state.view = "dashboard";
+      state.currentEventId = null;
+      render();
+    });
+
+  // Member overlay open/close
+  const memberOverlay = document.getElementById("member-overlay");
+  const closeMemberBtns = document.querySelectorAll("[data-action='close-member']");
+  closeMemberBtns.forEach((b) => b.addEventListener("click", () => memberOverlay.classList.remove("show")));
+
+  const openAddMember = document.querySelector("[data-action='add-member']");
+  openAddMember &&
+    openAddMember.addEventListener("click", () => {
+      document.getElementById("member-modal-title").textContent = "Add Member";
+      document.getElementById("member-id").value = "";
+      document.getElementById("m-name").value = "";
+      document.getElementById("m-role").value = "member";
+      document.getElementById("m-color").value = "#14b8a6";
+      memberOverlay.classList.add("show");
+    });
+
+  // Member edit/remove
+  document.querySelectorAll("[data-action='edit-member']").forEach((btn) =>
+    btn.addEventListener("click", () => {
+      const id = btn.getAttribute("data-id");
+      const m = event.members.find((x) => x.id === id);
+      if (!m) return;
+      document.getElementById("member-modal-title").textContent = "Edit Member";
+      document.getElementById("member-id").value = m.id;
+      document.getElementById("m-name").value = m.name;
+      document.getElementById("m-role").value = m.role || "member";
+      document.getElementById("m-color").value = m.color || "#14b8a6";
+      memberOverlay.classList.add("show");
+    })
+  );
+
+  document.querySelectorAll("[data-action='remove-member']").forEach((btn) =>
+    btn.addEventListener("click", () => {
+      const id = btn.getAttribute("data-id");
+      // Safety: block if referenced in expenses
+      const used =
+        event.expenses.some((ex) => ex.paidBy === id) ||
+        event.expenses.some((ex) => (ex.sharedBy || []).includes(id));
+      if (used) {
+        alert("This member is used in expenses. Edit or remove those expenses first.");
+        return;
+      }
+      if (!confirm("Remove this member?")) return;
+      event.members = event.members.filter((m) => m.id !== id);
+      persistEvent(event);
+      render();
+    })
+  );
+
+  // Member form submit
+  const memberForm = document.getElementById("member-form");
+  memberForm &&
+    memberForm.addEventListener("submit", (e) => {
+      e.preventDefault();
+      const id = document.getElementById("member-id").value;
+      const name = document.getElementById("m-name").value.trim();
+      const role = document.getElementById("m-role").value || "member";
+      const color = document.getElementById("m-color").value || "#14b8a6";
+      if (!name) return;
+
+      if (id) {
+        const idx = event.members.findIndex((m) => m.id === id);
+        if (idx >= 0) event.members[idx] = { ...event.members[idx], name, role, color };
+      } else {
+        event.members.push({ id: generateId(), name, role, color });
+      }
+      memberOverlay.classList.remove("show");
+      persistEvent(event);
+      render();
+    });
+
+  // Expense overlay open/close
+  const expenseOverlay = document.getElementById("expense-overlay");
+  const closeExpenseBtns = document.querySelectorAll("[data-action='close-expense']");
+  closeExpenseBtns.forEach((b) => b.addEventListener("click", () => expenseOverlay.classList.remove("show")));
+
+  const openAddExpense = document.querySelector("[data-action='add-expense']");
+  openAddExpense &&
+    openAddExpense.addEventListener("click", () => {
+      if (event.members.length === 0) {
+        alert("Add at least one member first.");
+        return;
+      }
+      setupExpenseModalMembers(event);
+      document.getElementById("expense-modal-title").textContent = "Add Expense";
+      document.getElementById("expense-id").value = "";
+      document.getElementById("ex-title").value = "";
+      document.getElementById("ex-amount").value = "";
+      document.getElementById("ex-date").value = new Date().toISOString().slice(0, 10);
+      document.getElementById("ex-category").value = "";
+      document.getElementById("ex-note").value = "";
+      expenseOverlay.classList.add("show");
+    });
+
+  // Expense edit/delete
+  document.querySelectorAll("[data-action='edit-expense']").forEach((btn) =>
+    btn.addEventListener("click", () => {
+      const id = btn.getAttribute("data-id");
+      const ex = event.expenses.find((x) => x.id === id);
+      if (!ex) return;
+      setupExpenseModalMembers(event, ex);
+      document.getElementById("expense-modal-title").textContent = "Edit Expense";
+      document.getElementById("expense-id").value = ex.id;
+      document.getElementById("ex-title").value = ex.title || "";
+      document.getElementById("ex-amount").value = ex.amount || 0;
+      document.getElementById("ex-date").value = ex.date || new Date().toISOString().slice(0, 10);
+      document.getElementById("ex-category").value = ex.category || "";
+      document.getElementById("ex-note").value = ex.note || "";
+      expenseOverlay.classList.add("show");
+    })
+  );
+
+  document.querySelectorAll("[data-action='delete-expense']").forEach((btn) =>
+    btn.addEventListener("click", () => {
+      const id = btn.getAttribute("data-id");
+      if (!confirm("Delete this expense?")) return;
+      event.expenses = event.expenses.filter((x) => x.id !== id);
+      persistEvent(event);
+      render();
+    })
+  );
+
+  // Expense form submit
+  const expenseForm = document.getElementById("expense-form");
+  expenseForm &&
+    expenseForm.addEventListener("submit", (e) => {
+      e.preventDefault();
+      const eid = document.getElementById("expense-id").value;
+      const title = document.getElementById("ex-title").value.trim();
+      const amount = parseFloat(document.getElementById("ex-amount").value || "0");
+      const date = document.getElementById("ex-date").value;
+      const paidBy = document.getElementById("ex-paidBy").value;
+      const category = document.getElementById("ex-category").value.trim();
+      const note = document.getElementById("ex-note").value.trim();
+      const sharedBy = Array.from(document.querySelectorAll("input[name='ex-sharedBy']:checked")).map((i) => i.value);
+
+      if (!title || !Number.isFinite(amount) || amount <= 0 || !paidBy || sharedBy.length === 0) {
+        alert("Please fill all required fields (title, amount > 0, paidBy, at least one sharedBy).");
+        return;
+      }
+
+      const payload = { id: eid || generateId(), title, amount, date, paidBy, sharedBy, category, note };
+
+      if (eid) {
+        const idx = event.expenses.findIndex((x) => x.id === eid);
+        if (idx >= 0) event.expenses[idx] = payload;
+      } else {
+        event.expenses.push(payload);
+      }
+
+      expenseOverlay.classList.remove("show");
+      persistEvent(event);
+      render();
+    });
+
+  // Settlement toggle
+  document.querySelectorAll("input[data-action='toggle-paid']").forEach((cb) =>
+    cb.addEventListener("change", () => {
+      const key = cb.getAttribute("data-key");
+      const evId = event.id;
+      state.settled[evId] = state.settled[evId] || {};
+      state.settled[evId][key] = cb.checked;
+      writeLS(LS_SETTLED_KEY, state.settled);
+    })
+  );
+}
+
+function setupExpenseModalMembers(event, existing) {
+  // PaidBy select
+  const paidSel = document.getElementById("ex-paidBy");
+  paidSel.innerHTML = event.members.map((m, i) => `<option value="${m.id}" ${existing ? (existing.paidBy===m.id?"selected":"") : (i===0?"selected":"")}>${m.name}</option>`).join("");
+
+  // SharedBy checkboxes
+  const grid = document.getElementById("ex-sharedBy");
+  const existingSet = new Set(existing?.sharedBy || event.members.map((m) => m.id)); // default all
+  grid.innerHTML = event.members
+    .map(
+      (m) => `
+      <label class="flex items-center gap-2 p-2 rounded-md bg-slate-800/60 border border-slate-700/60">
+        <input type="checkbox" name="ex-sharedBy" value="${m.id}" ${existingSet.has(m.id) ? "checked" : ""}/>
+        <span class="text-sm">${m.name}</span>
+      </label>`
+    )
+    .join("");
+}
+
+
+// Persist helper
+function persistEvent(event) {
+  const idx = state.events.findIndex((e) => e.id === event.id);
+  if (idx >= 0) {
+    state.events[idx] = event;
+    writeLS(LS_EVENTS_KEY, state.events);
+  }
+}
+
 
 function renderExpenseRow(event, ex) {
   const payer = event.members.find((m) => m.id === ex.paidBy)?.name || "Unknown";
@@ -687,3 +893,42 @@ function renderExpenseModal(event) {
         <div class="flex gap-3 pt-2">
           <button type="button" class="btn flex-1 rounded-md border border-slate-600 text-slate-300 hover:bg-slate-800 px-4 py-2" data-action="close-expense">Cancel</button>
           <button type="submit" class="btn flex-1 rounded-md bg-gradient-to-r from-teal-600
+          
+
+  function renderMemberModal() {
+      return `
+    <div class="modal-overlay" id="member-overlay">
+      <div class="modal glass">
+        <div class="flex items-center justify-between mb-3">
+          <h3 class="text-lg font-semibold" id="member-modal-title">Add Member</h3>
+          <button data-action="close-member" class="text-slate-300 hover:text-white">✕</button>
+        </div>
+        <form id="member-form" class="space-y-3">
+          <input type="hidden" id="member-id" />
+          <div>
+            <label class="block text-sm text-slate-300 mb-1">Name</label>
+            <input id="m-name" class="w-full rounded-md border border-slate-600 bg-slate-800 px-3 py-2 outline-none focus:ring-2 focus:ring-teal-500" required/>
+          </div>
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div>
+              <label class="block text-sm text-slate-300 mb-1">Role</label>
+              <select id="m-role" class="w-full rounded-md border border-slate-600 bg-slate-800 px-3 py-2">
+                <option value="member">Member</option>
+                <option value="admin">Admin</option>
+              </select>
+            </div>
+            <div>
+              <label class="block text-sm text-slate-300 mb-1">Color</label>
+              <input id="m-color" type="color" class="w-full h-10 rounded-md border border-slate-600 bg-slate-800 px-2 py-1"/>
+            </div>
+          </div>
+          <div class="flex gap-3 pt-2">
+            <button type="button" class="btn flex-1 rounded-md border border-slate-600 text-slate-300 hover:bg-slate-800 px-4 py-2" data-action="close-member">Cancel</button>
+            <button type="submit" class="btn flex-1 rounded-md bg-gradient-to-r from-teal-600 to-blue-600 hover:from-teal-700 hover:to-blue-700 text-white px-4 py-2">Save</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  `;
+}
+
