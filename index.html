@@ -309,8 +309,17 @@ async function loadLibrary(){
       let total = 0;
       arr.forEach(r=>{ total += r.size; const div = document.createElement('div'); div.className='rec-item'; const img = document.createElement('img'); img.src = r.thumb || ''; img.width=64; img.height=36; img.style.objectFit='cover'; img.style.borderRadius='6px';
         const meta = document.createElement('div'); meta.style.flex='1'; meta.innerHTML = `<div style="font-weight:600">${r.name}</div><small>${new Date(r.created).toLocaleString()} • ${Math.round(r.size/1024)} KB</small>`;
-        const btns = document.createElement('div'); btns.innerHTML = `<button data-id="${r.id}" class="muted" style="margin-right:6px">Play</button><button data-id="${r.id}" class="muted">Download</button>;
-        div.appendChild(img); div.appendChild(meta); div.appendChild(btns); libraryEl.appendChild(div)`;
+        const btns = document.createElement('div');btns.innerHTML = ` 
+  <button data-id="${r.id}" data-action="play" class="muted" style="margin-right:6px">Play</button>
+  <button data-id="${r.id}" data-action="download" class="muted" style="margin-right:6px">Download</button>
+  <button data-id="${r.id}" data-action="rename" class="muted" style="margin-right:6px">Rename</button>
+  <button data-id="${r.id}" data-action="delete" class="muted">Delete</button>
+`;
+div.appendChild(img);
+div.appendChild(meta);
+div.appendChild(btns);
+libraryEl.appendChild(div);
+  
       });
       storageUsedEl.textContent = Math.round(total/1024/1024*100)/100 + ' MB';
       // attach handlers
@@ -323,9 +332,43 @@ async function loadLibrary(){
         }else if(action==='download'){
           const a = document.createElement('a'); a.href = URL.createObjectURL(rec.blob); a.download = rec.name; document.body.appendChild(a); a.click(); a.remove();
         }
+          else if (action === 'rename') {
+      const newName = prompt('Enter new name:', rec.name);
+      if (newName && newName.trim() !== '') {
+        await renameRecording(id, newName.trim());
+        loadLibrary();
+      }
+    }
+    else if (action === 'delete') {
+      if (confirm('Delete this recording?')) {
+        await deleteRecording(id);
+        loadLibrary();
+      }
+    }
       }));
     };
   }catch(e){ console.error(e); }
+}
+async function renameRecording(id, newName) {
+  const db = await openDB();
+  const tx = db.transaction(STORE, 'readwrite');
+  const store = tx.objectStore(STORE);
+  const rec = await new Promise(res => {
+    const rq = store.get(id);
+    rq.onsuccess = () => res(rq.result);
+  });
+  if (rec) {
+    rec.name = newName.endsWith('.webm') ? newName : (newName + '.webm');
+    store.put(rec);
+  }
+  return tx.complete;
+}
+
+async function deleteRecording(id) {
+  const db = await openDB();
+  const tx = db.transaction(STORE, 'readwrite');
+  tx.objectStore(STORE).delete(id);
+  return tx.complete;
 }
 
 clearBtn.onclick = async ()=>{
