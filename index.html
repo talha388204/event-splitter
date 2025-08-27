@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="en" class="dark">
+  <head>
+    <meta charset="utf-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1, viewport-fit=cover"
+    />
+    <title>Event Splitter</title>
+    <meta name="description" content="Split expenses with friends easily" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap"
+      rel="stylesheet"
+    />
+
+    <!-- Tailwind CDN (no build step) -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+      tailwind.config = {
+        darkMode: ["class"],
+        theme: {
+          extend: {
+            colors: {
+              background: "#0f172a",
+              foreground: "#e2e8f0",
+              primary: { DEFAULT: "#14b8a6", foreground: "#0b1324" },
+              secondary: { DEFAULT: "#fb923c", foreground: "#0b1324" },
+              card: "#111827",
+              accent: "#1f2937",
+              muted: "#334155",
+              ring: "#22d3ee",
+              input: "#334155",
+              border: "#334155",
+              destructive: "#ef4444",
+            },
+            boxShadow: {
+              glass: "0 10px 40px rgba(20,184,166,0.15)",
+            },
+            keyframes: {
+              "fade-in": { from: { opacity: 0 }, to: { opacity: 1 } },
+              "slide-up": {
+                from: { transform: "translateY(8px)", opacity: 0 },
+                to: { transform: "translateY(0)", opacity: 1 },
+              },
+              "caret-blink": {
+                "0%, 70%, 100%": { opacity: 1 },
+                "20%, 50%": { opacity: 0 },
+              },
+            },
+            animation: {
+              "fade-in": "fade-in 0.3s ease",
+              "slide-up": "slide-up 0.25s ease",
+              "caret-blink": "caret-blink 1.2s infinite",
+            },
+          },
+        },
+      };
+    </script>
+
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+
+  <body class="min-h-screen bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 text-slate-100">
+    <!-- App root -->
+    <div id="app"></div>
+
+    <!-- App scripts -->
+    <script type="module" src="./app.js"></script>
+  </body>
+</html>
