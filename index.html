@@ -1,71 +1,372 @@
-<!doctype html>
-<html lang="en" class="dark">
-  <head>
-    <meta charset="utf-8" />
-    <meta
-      name="viewport"
-      content="width=device-width, initial-scale=1, viewport-fit=cover"
-    />
-    <title>Event Splitter</title>
-    <meta name="description" content="Split expenses with friends easily" />
-    <link rel="preconnect" href="https://fonts.googleapis.com" />
-    <link
-      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap"
-      rel="stylesheet"
-    />
+<!-- FILE: index.html --><!doctype html>
 
-    <!-- Tailwind CDN (no build step) -->
-    <script src="https://cdn.tailwindcss.com"></script>
-    <script>
-      tailwind.config = {
-        darkMode: ["class"],
-        theme: {
-          extend: {
-            colors: {
-              background: "#0f172a",
-              foreground: "#e2e8f0",
-              primary: { DEFAULT: "#14b8a6", foreground: "#0b1324" },
-              secondary: { DEFAULT: "#fb923c", foreground: "#0b1324" },
-              card: "#111827",
-              accent: "#1f2937",
-              muted: "#334155",
-              ring: "#22d3ee",
-              input: "#334155",
-              border: "#334155",
-              destructive: "#ef4444",
-            },
-            boxShadow: {
-              glass: "0 10px 40px rgba(20,184,166,0.15)",
-            },
-            keyframes: {
-              "fade-in": { from: { opacity: 0 }, to: { opacity: 1 } },
-              "slide-up": {
-                from: { transform: "translateY(8px)", opacity: 0 },
-                to: { transform: "translateY(0)", opacity: 1 },
-              },
-              "caret-blink": {
-                "0%, 70%, 100%": { opacity: 1 },
-                "20%, 50%": { opacity: 0 },
-              },
-            },
-            animation: {
-              "fade-in": "fade-in 0.3s ease",
-              "slide-up": "slide-up 0.25s ease",
-              "caret-blink": "caret-blink 1.2s infinite",
-            },
-          },
-        },
-      };
-    </script>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>GlassRec — Screen Recorder (PWA)</title>
+  <link rel="manifest" href="/manifest.webmanifest">
+  <meta name="theme-color" content="#0f1724">
+  <style>
+    /* ===== Glassy Spotify-style minimal CSS ===== */
+    :root{
+      --bg:#071020; --card: rgba(255,255,255,0.06); --glass-border: rgba(255,255,255,0.08);
+      --accent1: #1ed760; --accent2:#00b3ff; --accent3:#6a5cff;
+      --radius:18px; --txt:#e6eef8;
+      --glass-blur:12px;
+      font-family: Inter, system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial;
+    }
+    html,body{height:100%;background:linear-gradient(180deg,#071020 0%, #05101a 100%);color:var(--txt);margin:0}
+    .app{display:grid;grid-template-columns:280px 1fr;gap:24px;padding:28px;min-height:100vh;box-sizing:border-box}/* sidebar */
+.sidebar{backdrop-filter: blur(var(--glass-blur));background:var(--card);border:1px solid var(--glass-border);border-radius:var(--radius);padding:18px}
+.brand{font-weight:700;font-size:20px;margin-bottom:12px}
+.library{display:flex;flex-direction:column;gap:8px;max-height:70vh;overflow:auto}
+.rec-item{padding:8px;border-radius:10px;background:transparent;border:1px solid rgba(255,255,255,0.02);display:flex;align-items:center;gap:8px}
+.rec-item small{opacity:0.7}
 
-    <link rel="stylesheet" href="./styles.css" />
-  </head>
+/* main */
+.main{display:flex;flex-direction:column;gap:18px}
+.card{backdrop-filter: blur(var(--glass-blur));background:var(--card);border:1px solid var(--glass-border);border-radius:20px;padding:20px}
+.controls{display:flex;gap:12px;align-items:center}
+.big-btn{padding:12px 18px;border-radius:12px;border:none;background:linear-gradient(90deg,var(--accent1),var(--accent2));color:#021018;font-weight:700;cursor:pointer}
+.muted{background:transparent;border:1px solid rgba(255,255,255,0.06);color:var(--txt)}
+select,input{background:transparent;border:1px solid rgba(255,255,255,0.04);color:var(--txt);padding:8px;border-radius:10px}
+.preview{background: #000;border-radius:10px;overflow:hidden;min-height:220px;display:flex;align-items:center;justify-content:center}
+video{width:100%;height:100%;object-fit:cover}
+.status{display:inline-flex;align-items:center;gap:8px;padding:6px 10px;border-radius:999px;background:rgba(0,0,0,0.3)}
+.dot{width:10px;height:10px;border-radius:50%;background:tomato;box-shadow:0 0 8px rgba(255,50,50,0.7);animation:pulse 1.5s infinite}
+@keyframes pulse{0%{transform:scale(1)}50%{transform:scale(1.3)}100%{transform:scale(1)}}
+.footer{display:flex;justify-content:space-between;align-items:center}
+.wave{height:8px;border-radius:6px;background:linear-gradient(90deg,var(--accent2),var(--accent3));width:120px}
 
-  <body class="min-h-screen bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 text-slate-100">
-    <!-- App root -->
-    <div id="app"></div>
+/* responsive */
+@media(max-width:900px){.app{grid-template-columns:1fr;padding:18px}.sidebar{order:2}}
 
-    <!-- App scripts -->
-    <script type="module" src="./app.js"></script>
-  </body>
+/* small helper */
+.muted-text{opacity:0.7;font-size:13px}
+
+  </style>
+</head>
+<body>
+  <div class="app">
+    <aside class="sidebar card">
+      <div class="brand">GlassRec</div>
+      <div class="muted-text">Local screen recorder • PWA • Offline</div>
+      <hr style="opacity:0.06;margin:12px 0"/>
+      <div style="font-weight:600;margin-bottom:8px">Library</div>
+      <div class="library" id="library">
+        <div class="muted-text">No recordings yet</div>
+      </div>
+      <hr style="opacity:0.06;margin:12px 0"/>
+      <div class="muted-text">Storage used: <span id="storageUsed">0 MB</span></div>
+      <div style="margin-top:12px;font-size:13px;opacity:0.8">Tips: App requires HTTPS to capture screen. Install from browser menu to use PWA mode.</div>
+    </aside><main class="main">
+  <section class="card">
+    <div style="display:flex;justify-content:space-between;align-items:center">
+      <div style="display:flex;flex-direction:column">
+        <div style="font-weight:700">Screen Recorder</div>
+        <div class="muted-text">Pick source, toggle mic, start recording.</div>
+      </div>
+      <div class="status"><span class="dot" id="liveDot" style="display:none"></span><div id="statusText">Idle</div></div>
+    </div>
+
+    <div style="height:12px"></div>
+    <div class="controls">
+      <label>
+        Source
+        <select id="sourceSelect">
+          <option value="screen">Entire screen</option>
+          <option value="window">Window</option>
+          <option value="tab">Browser tab</option>
+        </select>
+      </label>
+
+      <label>
+        Quality
+        <select id="qualitySelect">
+          <option value="1280x720@30">720p @30</option>
+          <option value="1920x1080@30" selected>1080p @30</option>
+          <option value="1920x1080@60">1080p @60</option>
+        </select>
+      </label>
+
+      <label>
+        <input type="checkbox" id="micToggle"/> Mic
+      </label>
+
+      <button id="startBtn" class="big-btn">Start</button>
+      <button id="pauseBtn" class="muted">Pause</button>
+      <button id="stopBtn" class="muted">Stop</button>
+    </div>
+
+    <div style="height:14px"></div>
+    <div class="preview" id="previewWrap">
+      <div class="muted-text">Preview will appear here</div>
+    </div>
+
+    <div style="height:10px"></div>
+    <div class="footer">
+      <div style="display:flex;gap:8px;align-items:center">
+        <div class="wave" id="vuMeter" style="width:0"></div>
+        <div class="muted-text" id="timer">00:00</div>
+      </div>
+      <div style="display:flex;gap:8px">
+        <button id="downloadBtn" class="muted">Download</button>
+        <button id="clearBtn" class="muted">Clear Library</button>
+      </div>
+    </div>
+  </section>
+
+  <section id="editor" class="card" style="display:none">
+    <div style="font-weight:700">Editor (Trim)</div>
+    <div style="height:8px"></div>
+    <div style="display:flex;gap:8px;align-items:center">
+      <input type="range" id="trimStart" min="0" max="100" value="0" style="flex:1"/>
+      <input type="range" id="trimEnd" min="0" max="100" value="100" style="flex:1"/>
+    </div>
+    <div style="height:8px"></div>
+    <div style="display:flex;gap:8px">
+      <button id="applyTrim" class="big-btn">Apply Trim</button>
+      <button id="closeEditor" class="muted">Close</button>
+    </div>
+  </section>
+
+</main>
+
+  </div><script>
+// ===== Simple Screen Recorder (no external libs) =====
+const startBtn = document.getElementById('startBtn');
+const stopBtn = document.getElementById('stopBtn');
+const pauseBtn = document.getElementById('pauseBtn');
+const downloadBtn = document.getElementById('downloadBtn');
+const micToggle = document.getElementById('micToggle');
+const sourceSelect = document.getElementById('sourceSelect');
+const qualitySelect = document.getElementById('qualitySelect');
+const previewWrap = document.getElementById('previewWrap');
+const statusText = document.getElementById('statusText');
+const liveDot = document.getElementById('liveDot');
+const timerEl = document.getElementById('timer');
+const libraryEl = document.getElementById('library');
+const storageUsedEl = document.getElementById('storageUsed');
+const clearBtn = document.getElementById('clearBtn');
+
+let mediaRecorder=null, recordedChunks=[], recordingStart=0, timerInterval=null;
+let screenStream=null, micStream=null, mixedStream=null;
+let currentBlob=null;
+
+function fmtTime(s){
+  const mm = String(Math.floor(s/60)).padStart(2,'0');
+  const ss = String(Math.floor(s%60)).padStart(2,'0');
+  return mm+':'+ss;
+}
+
+function updateStatus(st){ statusText.textContent=st; liveDot.style.display = st==='Recording' ? 'inline-block' : 'none'; }
+
+async function getStreams(){
+  const q = qualitySelect.value.split('@')[0].split('x');
+  const width = parseInt(q[0]);
+  const height = parseInt(q[1]);
+  const fps = parseInt(qualitySelect.value.split('@')[1]);
+
+  const displayMediaOptions = { video: { width, height, frameRate: fps }, audio: false };
+  // for tab capture, Chrome can include audio when selecting 'tab'
+  try{
+    screenStream = await navigator.mediaDevices.getDisplayMedia(displayMediaOptions);
+  }catch(err){
+    console.error('getDisplayMedia error',err); alert('Screen capture permission denied or not available.'); throw err;
+  }
+
+  if(micToggle.checked){
+    try{ micStream = await navigator.mediaDevices.getUserMedia({ audio:true }); }
+    catch(e){ console.warn('Mic not allowed',e); micStream=null; }
+  }
+
+  // if both exist, mix them via AudioContext
+  if((screenStream && screenStream.getAudioTracks().length>0) || micStream){
+    const audioCtx = new AudioContext();
+    const dest = audioCtx.createMediaStreamDestination();
+
+    if(screenStream && screenStream.getAudioTracks().length>0){
+      const src1 = audioCtx.createMediaStreamSource(new MediaStream(screenStream.getAudioTracks()));
+      src1.connect(dest);
+    }
+    if(micStream && micStream.getAudioTracks().length>0){
+      const src2 = audioCtx.createMediaStreamSource(micStream);
+      src2.connect(dest);
+    }
+
+    // create final stream with video track + mixed audio
+    mixedStream = new MediaStream([ ...screenStream.getVideoTracks(), ...dest.stream.getAudioTracks() ]);
+  }else{
+    mixedStream = screenStream;
+  }
+  return mixedStream;
+}
+
+function attachPreview(stream){
+  previewWrap.innerHTML='';
+  const v = document.createElement('video'); v.autoplay=true; v.muted=true; v.playsInline=true;
+  v.srcObject = stream; previewWrap.appendChild(v);
+}
+
+function startTimer(){ recordingStart = Date.now(); timerInterval = setInterval(()=>{
+  const s = Math.floor((Date.now()-recordingStart)/1000); timerEl.textContent = fmtTime(s);
+}, 500); }
+function stopTimer(){ clearInterval(timerInterval); timerEl.textContent='00:00'; }
+
+startBtn.onclick = async ()=>{
+  startBtn.disabled=true; updateStatus('Starting...');
+  try{
+    const stream = await getStreams();
+    attachPreview(stream);
+
+    // find supported mime
+    const mimes = ['video/webm;codecs=vp9,opus','video/webm;codecs=vp8,opus','video/webm','video/mp4'];
+    let mime=null; for(const m of mimes) if(MediaRecorder.isTypeSupported(m)){ mime=m; break; }
+    const options = mime ? { mimeType: mime } : {};
+    recordedChunks = [];
+    mediaRecorder = new MediaRecorder(stream, options);
+    mediaRecorder.ondataavailable = e=>{ if(e.data && e.data.size>0) recordedChunks.push(e.data); };
+    mediaRecorder.onstop = async ()=>{
+      currentBlob = new Blob(recordedChunks, { type: recordedChunks[0]?.type || 'video/webm' });
+      const url = URL.createObjectURL(currentBlob);
+      // show preview in non-muted mode
+      previewWrap.innerHTML=''; const v = document.createElement('video'); v.controls=true; v.src = url; previewWrap.appendChild(v);
+      saveToLibrary(currentBlob);
+      updateStatus('Ready'); startBtn.disabled=false; stopTimer();
+    };
+    mediaRecorder.start(2000); // 2s chunks
+    updateStatus('Recording'); startTimer();
+  }catch(err){ console.error(err); updateStatus('Idle'); startBtn.disabled=false; }
+};
+
+pauseBtn.onclick = ()=>{
+  if(!mediaRecorder) return;
+  if(mediaRecorder.state==='recording'){ mediaRecorder.pause(); pauseBtn.textContent='Resume'; updateStatus('Paused'); stopTimer(); }
+  else if(mediaRecorder.state==='paused'){ mediaRecorder.resume(); pauseBtn.textContent='Pause'; updateStatus('Recording'); startTimer(); }
+};
+
+stopBtn.onclick = ()=>{
+  if(mediaRecorder && (mediaRecorder.state==='recording' || mediaRecorder.state==='paused')){
+    mediaRecorder.stop();
+    // stop streams
+    [screenStream, micStream].forEach(s=>{ if(s) s.getTracks().forEach(t=>t.stop()); });
+  }
+};
+
+downloadBtn.onclick = ()=>{
+  if(!currentBlob){ alert('No recording to download'); return; }
+  const a = document.createElement('a'); a.href = URL.createObjectURL(currentBlob);
+  const name = 'glassrec_'+new Date().toISOString().replace(/[:.]/g,'-')+'.webm';
+  a.download = name; document.body.appendChild(a); a.click(); a.remove();
+};
+
+// ===== Simple IndexedDB Storage for library =====
+const DB_NAME='glassrec-db', STORE='recs';
+function openDB(){
+  return new Promise((res,rej)=>{
+    const rq = indexedDB.open(DB_NAME,1);
+    rq.onupgradeneeded = ()=>{ rq.result.createObjectStore(STORE, { keyPath:'id' }); };
+    rq.onsuccess = ()=>res(rq.result);
+    rq.onerror = ()=>rej(rq.error);
+  });
+}
+async function saveToLibrary(blob){
+  try{
+    const db = await openDB();
+    const tx = db.transaction(STORE,'readwrite');
+    const store = tx.objectStore(STORE);
+    const id = 'rec-'+Date.now();
+    // create thumbnail by capturing first frame
+    const url = URL.createObjectURL(blob);
+    const thumbnail = await captureFrame(url);
+    const rec = { id, name: id+'.webm', created: Date.now(), size: blob.size, blob, thumb: thumbnail };
+    store.add(rec);
+    tx.oncomplete = ()=>{ loadLibrary(); alert('Saved to library'); };
+  }catch(e){ console.error('saveToLibrary', e); }
+}
+
+function captureFrame(videoUrl){
+  return new Promise((res)=>{
+    const v = document.createElement('video'); v.src = videoUrl; v.muted=true; v.playsInline=true; v.currentTime = 0.1;
+    v.onloadeddata = ()=>{
+      const c = document.createElement('canvas'); c.width=160; c.height=90; c.getContext('2d').drawImage(v,0,0,c.width,c.height);
+      res(c.toDataURL()); URL.revokeObjectURL(videoUrl);
+    };
+    v.onerror = ()=>res(null);
+  });
+}
+
+async function loadLibrary(){
+  libraryEl.innerHTML = '';
+  try{
+    const db = await openDB();
+    const tx = db.transaction(STORE,'readonly'); const store = tx.objectStore(STORE);
+    const req = store.getAll(); req.onsuccess = ()=>{
+      const arr = req.result || [];
+      if(arr.length===0) libraryEl.innerHTML = '<div class="muted-text">No recordings yet</div>';
+      arr.sort((a,b)=>b.created-a.created);
+      let total = 0;
+      arr.forEach(r=>{ total += r.size; const div = document.createElement('div'); div.className='rec-item'; const img = document.createElement('img'); img.src = r.thumb || ''; img.width=64; img.height=36; img.style.objectFit='cover'; img.style.borderRadius='6px';
+        const meta = document.createElement('div'); meta.style.flex='1'; meta.innerHTML = `<div style="font-weight:600">${r.name}</div><small>${new Date(r.created).toLocaleString()} • ${Math.round(r.size/1024)} KB</small>`;
+        const btns = document.createElement('div'); btns.innerHTML = `<button data-id="${r.id}" class="muted" style="margin-right:6px">Play</button><button data-id="${r.id}" class="muted">Download</button>;
+        div.appendChild(img); div.appendChild(meta); div.appendChild(btns); libraryEl.appendChild(div)`;
+      });
+      storageUsedEl.textContent = Math.round(total/1024/1024*100)/100 + ' MB';
+      // attach handlers
+      libraryEl.querySelectorAll('button').forEach(b=> b.addEventListener('click', async (ev)=>{
+        const id = ev.target.dataset.id; const action = ev.target.textContent.trim().toLowerCase();
+        const rec = arr.find(x=>x.id===id);
+        if(!rec) return;
+        if(action==='play'){
+          previewWrap.innerHTML=''; const v = document.createElement('video'); v.controls=true; v.src = URL.createObjectURL(rec.blob); previewWrap.appendChild(v);
+        }else if(action==='download'){
+          const a = document.createElement('a'); a.href = URL.createObjectURL(rec.blob); a.download = rec.name; document.body.appendChild(a); a.click(); a.remove();
+        }
+      }));
+    };
+  }catch(e){ console.error(e); }
+}
+
+clearBtn.onclick = async ()=>{
+  if(!confirm('Clear library? This will remove local recordings.')) return;
+  const db = await openDB(); const tx = db.transaction(STORE,'readwrite'); tx.objectStore(STORE).clear(); tx.oncomplete = ()=>{ loadLibrary(); storageUsedEl.textContent='0 MB'; };
+};
+
+// initial load
+loadLibrary();
+updateStatus('Idle');
+
+// ===== Service Worker registration =====
+if('serviceWorker' in navigator){
+  navigator.serviceWorker.register('/sw.js').then(()=>console.log('SW registered')).catch(e=>console.warn('SW failed',e));
+}
+
+// ===== Basic keyboard shortcuts =====
+document.addEventListener('keydown', e=>{
+  if((e.ctrlKey||e.metaKey) && e.shiftKey && e.code==='KeyR'){ startBtn.click(); }
+  if((e.ctrlKey||e.metaKey) && e.shiftKey && e.code==='KeyP'){ pauseBtn.click(); }
+  if((e.ctrlKey||e.metaKey) && e.shiftKey && e.code==='KeyS'){ stopBtn.click(); }
+});
+
+</script><!-- FILE: manifest.webmanifest (put beside index.html) --><!--
+{
+  "name": "GlassRec",
+  "short_name": "GlassRec",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#071020",
+  "theme_color": "#0f1724",
+  "icons": [
+    { "src":"/icons/icon-192.png","sizes":"192x192","type":"image/png" },
+    { "src":"/icons/icon-512.png","sizes":"512x512","type":"image/png" }
+  ]
+}
+--><!-- FILE: sw.js (simple static cache service worker) --><!--
+const CACHE_NAME = 'glassrec-cache-v1';
+const ASSETS = [ '/', '/index.html', '/manifest.webmanifest', '/icons/icon-192.png', '/icons/icon-512.png' ];
+self.addEventListener('install', e=>{ e.waitUntil(caches.open(CACHE_NAME).then(c=>c.addAll(ASSETS))); self.skipWaiting(); });
+self.addEventListener('activate', e=>{ e.waitUntil(clients.claim()); });
+self.addEventListener('fetch', e=>{ e.respondWith(caches.match(e.request).then(r=> r || fetch(e.request))); });
+--></body>
 </html>
