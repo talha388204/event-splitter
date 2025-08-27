@@ -848,55 +848,58 @@ function renderExpenseRow(event, ex) {
 }
 
 function renderExpenseModal(event) {
-  // Build members list for selects dynamically via JS in binder
   return `
-  <div class="modal-overlay" id="expense-overlay">
-    <div class="modal glass">
-      <div class="flex items-center justify-between mb-3">
-        <h3 class="text-lg font-semibold" id="expense-modal-title">Add Expense</h3>
-        <button data-action="close-expense" class="text-slate-300 hover:text-white">✕</button>
+    <div class="modal-overlay" id="expense-overlay">
+      <div class="modal glass">
+        <div class="flex items-center justify-between mb-3">
+          <h3 class="text-lg font-semibold" id="expense-modal-title">Add Expense</h3>
+          <button data-action="close-expense" class="text-slate-300 hover:text-white">✕</button>
+        </div>
+        <form id="expense-form" class="space-y-3">
+          <input type="hidden" id="expense-id" />
+          <div>
+            <label class="block text-sm text-slate-300 mb-1">Title</label>
+            <input id="ex-title" class="w-full rounded-md border border-slate-600 bg-slate-800 px-3 py-2 outline-none focus:ring-2 focus:ring-teal-500" required/>
+          </div>
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div>
+              <label class="block text-sm text-slate-300 mb-1">Amount</label>
+              <input type="number" min="0" step="0.01" id="ex-amount" class="w-full rounded-md border border-slate-600 bg-slate-800 px-3 py-2 outline-none focus:ring-2 focus:ring-teal-500" required/>
+            </div>
+            <div>
+              <label class="block text-sm text-slate-300 mb-1">Date</label>
+              <input type="date" id="ex-date" class="w-full rounded-md border border-slate-600 bg-slate-800 px-3 py-2 outline-none focus:ring-2 focus:ring-teal-500"/>
+            </div>
+          </div>
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div>
+              <label class="block text-sm text-slate-300 mb-1">Who Paid</label>
+              <select id="ex-paidBy" class="w-full rounded-md border border-slate-600 bg-slate-800 px-3 py-2 outline-none focus:ring-2 focus:ring-teal-500"></select>
+            </div>
+            <div>
+              <label class="block text-sm text-slate-300 mb-1">Category</label>
+              <input id="ex-category" placeholder="Food / Travel / Stay" class="w-full rounded-md border border-slate-600 bg-slate-800 px-3 py-2 outline-none focus:ring-2 focus:ring-teal-500"/>
+            </div>
+          </div>
+          <div>
+            <div class="block text-sm text-slate-300 mb-1">Shared By</div>
+            <div id="ex-sharedBy" class="grid grid-cols-2 sm:grid-cols-3 gap-2"></div>
+          </div>
+          <div>
+            <label class="block text-sm text-slate-300 mb-1">Note (optional)</label>
+            <textarea id="ex-note" rows="2" class="w-full rounded-md border border-slate-600 bg-slate-800 px-3 py-2 outline-none focus:ring-2 focus:ring-teal-500"></textarea>
+          </div>
+          <div class="flex gap-3 pt-2">
+            <button type="button" class="btn flex-1 rounded-md border border-slate-600 text-slate-300 hover:bg-slate-800 px-4 py-2" data-action="close-expense">Cancel</button>
+            <button type="submit" class="btn flex-1 rounded-md bg-gradient-to-r from-teal-600 to-blue-600 hover:from-teal-700 hover:to-blue-700 text-white px-4 py-2">Save</button>
+          </div>
+        </form>
       </div>
-      <form id="expense-form" class="space-y-3">
-        <input type="hidden" id="expense-id" />
-        <div>
-          <label class="block text-sm text-slate-300 mb-1">Title</label>
-          <input id="ex-title" class="w-full rounded-md border border-slate-600 bg-slate-800 px-3 py-2 outline-none focus:ring-2 focus:ring-teal-500" required/>
-        </div>
-        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
-          <div>
-            <label class="block text-sm text-slate-300 mb-1">Amount</label>
-            <input type="number" min="0" step="0.01" id="ex-amount" class="w-full rounded-md border border-slate-600 bg-slate-800 px-3 py-2 outline-none focus:ring-2 focus:ring-teal-500" required/>
-          </div>
-          <div>
-            <label class="block text-sm text-slate-300 mb-1">Date</label>
-            <input type="date" id="ex-date" class="w-full rounded-md border border-slate-600 bg-slate-800 px-3 py-2 outline-none focus:ring-2 focus:ring-teal-500"/>
-          </div>
-        </div>
-        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
-          <div>
-            <label class="block text-sm text-slate-300 mb-1">Who Paid</label>
-            <select id="ex-paidBy" class="w-full rounded-md border border-slate-600 bg-slate-800 px-3 py-2 outline-none focus:ring-2 focus:ring-teal-500"></select>
-          </div>
-          <div>
-            <label class="block text-sm text-slate-300 mb-1">Category</label>
-            <input id="ex-category" placeholder="Food / Travel / Stay" class="w-full rounded-md border border-slate-600 bg-slate-800 px-3 py-2 outline-none focus:ring-2 focus:ring-teal-500"/>
-          </div>
-        </div>
-        <div>
-          <div class="block text-sm text-slate-300 mb-1">Shared By</div>
-          <div id="ex-sharedBy" class="grid grid-cols-2 sm:grid-cols-3 gap-2"></div>
-        </div>
-        <div>
-          <label class="block text-sm text-slate-300 mb-1">Note (optional)</label>
-          <textarea id="ex-note" rows="2" class="w-full rounded-md border border-slate-600 bg-slate-800 px-3 py-2 outline-none focus:ring-2 focus:ring-teal-500"></textarea>
-        </div>
-        <div class="flex gap-3 pt-2">
-          <button type="button" class="btn flex-1 rounded-md border border-slate-600 text-slate-300 hover:bg-slate-800 px-4 py-2" data-action="close-expense">Cancel</button>
-          <button type="submit" class="btn flex-1 rounded-md bg-gradient-to-r from-teal-600
-          
-
-  function renderMemberModal() {
-      return `
+    </div>
+  `;
+}
+function renderMemberModal() {
+  return `
     <div class="modal-overlay" id="member-overlay">
       <div class="modal glass">
         <div class="flex items-center justify-between mb-3">
@@ -912,14 +915,14 @@ function renderExpenseModal(event) {
           <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
               <label class="block text-sm text-slate-300 mb-1">Role</label>
-              <select id="m-role" class="w-full rounded-md border border-slate-600 bg-slate-800 px-3 py-2">
+              <select id="m-role" class="w-full rounded-md border border-slate-600 bg-slate-800 px-3 py-2 outline-none focus:ring-2 focus:ring-teal-500">
                 <option value="member">Member</option>
                 <option value="admin">Admin</option>
               </select>
             </div>
             <div>
               <label class="block text-sm text-slate-300 mb-1">Color</label>
-              <input id="m-color" type="color" class="w-full h-10 rounded-md border border-slate-600 bg-slate-800 px-2 py-1"/>
+              <input type="color" id="m-color" class="w-full rounded-md border border-slate-600 bg-slate-800 px-3 py-2 outline-none focus:ring-2 focus:ring-teal-500" value="#14b8a6"/>
             </div>
           </div>
           <div class="flex gap-3 pt-2">
@@ -931,4 +934,3 @@ function renderExpenseModal(event) {
     </div>
   `;
 }
-
